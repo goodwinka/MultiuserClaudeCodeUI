@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Регистрация — ClaudeCodeUI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 40px;
+    width: 360px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; color: #f0f6fc; }
+  .subtitle { font-size: 0.85rem; color: #8b949e; margin-bottom: 28px; }
+  label { display: block; font-size: 0.85rem; color: #8b949e; margin-bottom: 6px; }
+  .hint { font-size: 0.78rem; color: #6e7681; margin-top: -12px; margin-bottom: 14px; }
+  input {
+    width: 100%;
+    padding: 10px 14px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e6edf3;
+    font-size: 0.95rem;
+    margin-bottom: 6px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus { border-color: #388bfd; }
+  button {
+    width: 100%;
+    padding: 10px;
+    background: #238636;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    margin-top: 12px;
+    transition: background 0.15s;
+  }
+  button:hover { background: #2ea043; }
+  .error {
+    background: #3d1c1c;
+    border: 1px solid #6e3030;
+    color: #f85149;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    margin-bottom: 18px;
+  }
+  .footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #8b949e;
+  }
+  .footer a { color: #388bfd; text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Создать аккаунт</h1>
+  <div class="subtitle">Регистрация не требует подтверждения</div>
+
+  <div id="error" class="error" style="display:none"></div>
+
+  <form method="POST" action="/__gateway/auth/register">
+    <label for="username">Имя пользователя</label>
+    <input id="username" name="username" type="text" autocomplete="username"
+           pattern="[a-z0-9_]{3,20}" autofocus required>
+    <div class="hint">3–20 символов: строчные буквы, цифры, _</div>
+
+    <label for="password">Пароль</label>
+    <input id="password" name="password" type="password"
+           autocomplete="new-password" minlength="6" required>
+    <div class="hint">Минимум 6 символов</div>
+
+    <button type="submit">Зарегистрироваться</button>
+  </form>
+
+  <div class="footer">
+    Уже есть аккаунт? <a href="/__gateway/login">Войти</a>
+  </div>
+</div>
+
+<script>
+  const msgs = {
+    invalid_username: 'Недопустимое имя: 3–20 символов, только строчные буквы, цифры и _',
+    short_password:   'Пароль должен содержать не менее 6 символов.',
+    exists:           'Пользователь с таким именем уже существует.',
+  };
+  const err = new URLSearchParams(location.search).get('error');
+  if (err) {
+    const el = document.getElementById('error');
+    el.style.display = 'block';
+    el.textContent = msgs[err] || 'Ошибка регистрации. Попробуйте снова.';
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "80:80"
+    volumes:
+      # User project folders — persisted on host
+      - ./data/users:/data/users
+      # DB, logs — persisted on host
+      - ./data/db:/var/lib/multiuser-ccui
+      # Global Claude Code settings — edit on host to configure local LLM
+      - ./claude-config:/etc/claude
+    environment:
+      # Initial admin password (change after first login)
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      # JWT signing secret — CHANGE THIS in production
+      JWT_SECRET: ${JWT_SECRET:-changeme-use-a-long-random-string}
+      # Local LLM endpoint (Ollama / vLLM / llama.cpp OpenAI-compatible API)
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-http://host.docker.internal:11434/v1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-local}
+      # Session idle timeout in minutes (default 30)
+      SESSION_TIMEOUT_MINUTES: ${SESSION_TIMEOUT_MINUTES:-30}
+      # Max concurrent user sessions (0 = unlimited)
+      MAX_SESSIONS: ${MAX_SESSIONS:-0}
+    restart: unless-stopped
+    # Needed to spawn processes with different UIDs for user isolation
+    cap_add:
+      - SETUID
+      - SETGID
+    extra_hosts:
+      # Allows container to reach Ollama/LLM running on the host
+      - "host.docker.internal:host-gateway"

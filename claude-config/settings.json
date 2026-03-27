@@ -1,0 +1,10 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://host.docker.internal:11434/v1",
+    "ANTHROPIC_API_KEY": "local"
+  },
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}
