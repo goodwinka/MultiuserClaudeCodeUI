@@ -110,7 +110,7 @@ async function startProcess(username, uid) {
     HOME: `/data/users/${username}`,
     SERVER_PORT: String(port),
     HOST: '127.0.0.1',
-    IS_PLATFORM: 'true',                // bypass claudecodeui's own auth
+    VITE_IS_PLATFORM: 'true',           // bypass claudecodeui's own auth
     WORKSPACES_ROOT: `/data/users/${username}/projects`,
     PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     NODE_ENV: 'production',
