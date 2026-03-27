@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админ-панель — ClaudeCodeUI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+  }
+  header {
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 1.1rem; color: #f0f6fc; }
+  header a { color: #8b949e; text-decoration: none; font-size: 0.85rem; }
+  header a:hover { color: #e6edf3; }
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  h2 { font-size: 1rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; margin-top: 28px; }
+  table { width: 100%; border-collapse: collapse; background: #161b22; border-radius: 8px; overflow: hidden; border: 1px solid #30363d; }
+  th { background: #21262d; padding: 10px 14px; text-align: left; color: #8b949e; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 10px 14px; border-top: 1px solid #21262d; vertical-align: middle; }
+  tr:hover td { background: #1c2128; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 20px;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-admin  { background: #388bfd22; color: #79c0ff; border: 1px solid #388bfd55; }
+  .badge-user   { background: #23863622; color: #56d364; border: 1px solid #23863655; }
+  .badge-blocked{ background: #f8514922; color: #f85149; border: 1px solid #f8514955; }
+  .badge-active { background: #23863622; color: #56d364; border: 1px solid #23863655; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    padding: 5px 12px; border-radius: 6px; border: 1px solid;
+    cursor: pointer; font-size: 0.8rem; font-weight: 500;
+    background: transparent; transition: background 0.15s;
+  }
+  .btn-red    { color: #f85149; border-color: #f8514966; }
+  .btn-red:hover    { background: #f8514922; }
+  .btn-green  { color: #56d364; border-color: #56d36466; }
+  .btn-green:hover  { background: #56d36422; }
+  .btn-yellow { color: #d29922; border-color: #d2992266; }
+  .btn-yellow:hover { background: #d2992222; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 14px; margin-bottom: 8px; }
+  .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px 20px; }
+  .stat-card .num { font-size: 2rem; font-weight: 700; color: #f0f6fc; }
+  .stat-card .lbl { font-size: 0.8rem; color: #8b949e; margin-top: 4px; }
+  #msg { position: fixed; top: 16px; right: 16px; padding: 10px 18px;
+         background: #238636; border-radius: 6px; color: #fff; font-size: 0.85rem;
+         display: none; z-index: 100; }
+</style>
+</head>
+<body>
+<div id="msg"></div>
+
+<header>
+  <h1>Админ-панель — ClaudeCodeUI</h1>
+  <div style="display:flex;gap:20px;align-items:center">
+    <a href="/">На главную</a>
+    <a href="#" onclick="logout()">Выйти</a>
+  </div>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stat-grid">
+    <div class="stat-card"><div class="num" id="stat-users">—</div><div class="lbl">Пользователей</div></div>
+    <div class="stat-card"><div class="num" id="stat-sessions">—</div><div class="lbl">Активных сессий</div></div>
+  </div>
+
+  <!-- Active sessions -->
+  <h2>Активные сессии</h2>
+  <table>
+    <thead><tr>
+      <th>Пользователь</th><th>Порт</th><th>PID</th><th>Простой</th><th>Действия</th>
+    </tr></thead>
+    <tbody id="sessions-body"><tr><td colspan="5" style="color:#8b949e">Загрузка…</td></tr></tbody>
+  </table>
+
+  <!-- Users -->
+  <h2>Пользователи</h2>
+  <table>
+    <thead><tr>
+      <th>ID</th><th>Имя</th><th>Роль</th><th>UID</th><th>Создан</th><th>Статус</th><th>Действия</th>
+    </tr></thead>
+    <tbody id="users-body"><tr><td colspan="7" style="color:#8b949e">Загрузка…</td></tr></tbody>
+  </table>
+</main>
+
+<script>
+function showMsg(text, ok = true) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.style.background = ok ? '#238636' : '#b91c1c';
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 2500);
+}
+
+async function api(method, url, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function fmtIdle(sec) {
+  if (sec < 60) return sec + 'с';
+  if (sec < 3600) return Math.floor(sec/60) + 'м';
+  return Math.floor(sec/3600) + 'ч ' + Math.floor((sec%3600)/60) + 'м';
+}
+
+async function loadSessions() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/sessions');
+    document.getElementById('stat-sessions').textContent = data.length;
+    const tbody = document.getElementById('sessions-body');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#8b949e">Нет активных сессий</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(s => `
+      <tr>
+        <td>${s.username}</td>
+        <td>${s.port}</td>
+        <td>${s.pid}</td>
+        <td>${fmtIdle(s.idleSeconds)}</td>
+        <td><div class="actions">
+          <button class="btn btn-red" onclick="killSession('${s.username}')">Завершить</button>
+        </div></td>
+      </tr>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function loadUsers() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/users');
+    document.getElementById('stat-users').textContent = data.length;
+    const tbody = document.getElementById('users-body');
+    tbody.innerHTML = data.map(u => `
+      <tr>
+        <td>${u.id}</td>
+        <td><strong>${u.username}</strong></td>
+        <td><span class="badge badge-${u.role}">${u.role}</span></td>
+        <td>${u.uid}</td>
+        <td style="color:#8b949e;font-size:0.8rem">${u.created_at.slice(0,16)}</td>
+        <td>${u.blocked
+          ? '<span class="badge badge-blocked">Заблокирован</span>'
+          : '<span class="badge badge-active">Активен</span>'}</td>
+        <td><div class="actions">
+          ${u.blocked
+            ? `<button class="btn btn-green" onclick="unblock(${u.id})">Разблокировать</button>`
+            : `<button class="btn btn-yellow" onclick="block(${u.id})">Заблокировать</button>`}
+          ${u.role !== 'admin'
+            ? `<button class="btn btn-red" onclick="deleteUser(${u.id}, '${u.username}')">Удалить</button>`
+            : ''}
+        </div></td>
+      </tr>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function killSession(username) {
+  if (!confirm(`Завершить сессию ${username}?`)) return;
+  try {
+    await api('POST', `/__gateway/api/admin/sessions/${username}/kill`);
+    showMsg('Сессия завершена');
+    loadSessions();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function block(id) {
+  try {
+    await api('POST', `/__gateway/api/admin/users/${id}/block`);
+    showMsg('Пользователь заблокирован');
+    loadUsers(); loadSessions();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function unblock(id) {
+  try {
+    await api('POST', `/__gateway/api/admin/users/${id}/unblock`);
+    showMsg('Пользователь разблокирован');
+    loadUsers();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function deleteUser(id, username) {
+  if (!confirm(`Удалить пользователя ${username}? Это действие необратимо.`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/users/${id}`);
+    showMsg('Пользователь удалён');
+    loadUsers(); loadSessions();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function logout() {
+  await fetch('/__gateway/auth/logout', { method: 'POST' });
+  location.href = '/__gateway/login';
+}
+
+function refresh() { loadUsers(); loadSessions(); }
+
+refresh();
+setInterval(loadSessions, 10000);   // refresh sessions every 10s
+</script>
+</body>
+</html>

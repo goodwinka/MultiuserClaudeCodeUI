@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Вход — ClaudeCodeUI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 40px;
+    width: 360px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; color: #f0f6fc; }
+  .subtitle { font-size: 0.85rem; color: #8b949e; margin-bottom: 28px; }
+  label { display: block; font-size: 0.85rem; color: #8b949e; margin-bottom: 6px; }
+  input {
+    width: 100%;
+    padding: 10px 14px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e6edf3;
+    font-size: 0.95rem;
+    margin-bottom: 18px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus { border-color: #388bfd; }
+  button {
+    width: 100%;
+    padding: 10px;
+    background: #238636;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #2ea043; }
+  .error {
+    background: #3d1c1c;
+    border: 1px solid #6e3030;
+    color: #f85149;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    margin-bottom: 18px;
+  }
+  .footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #8b949e;
+  }
+  .footer a { color: #388bfd; text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>ClaudeCodeUI</h1>
+  <div class="subtitle">Войдите в свой аккаунт</div>
+
+  <div id="error" class="error" style="display:none"></div>
+
+  <form method="POST" action="/__gateway/auth/login">
+    <label for="username">Имя пользователя</label>
+    <input id="username" name="username" type="text" autocomplete="username" autofocus required>
+
+    <label for="password">Пароль</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+    <button type="submit">Войти</button>
+  </form>
+
+  <div class="footer">
+    Нет аккаунта? <a href="/__gateway/register">Зарегистрироваться</a>
+  </div>
+</div>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const err = params.get('error');
+  if (err) {
+    const el = document.getElementById('error');
+    el.style.display = 'block';
+    el.textContent = err === 'blocked'
+      ? 'Ваш аккаунт заблокирован. Обратитесь к администратору.'
+      : 'Неверное имя пользователя или пароль.';
+  }
+</script>
+</body>
+</html>
