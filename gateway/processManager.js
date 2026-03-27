@@ -150,7 +150,6 @@ async function startProcess(username, uid) {
   proc.stderr.pipe(logStream);
 
   const session = { port, proc, lastActivity: Date.now() };
-  sessions.set(username, session);
 
   proc.on('exit', (code) => {
     logStream.end();
@@ -161,6 +160,7 @@ async function startProcess(username, uid) {
 
   try {
     await waitForPort(port, 30000);
+    sessions.set(username, session);
     console.log(`[pm] ${username} started on port ${port}`);
   } catch (err) {
     proc.kill();
@@ -172,13 +172,26 @@ async function startProcess(username, uid) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+// username → Promise<number> while process is starting up
+const _starting = new Map();
+
 async function getOrStart(username, uid) {
   const existing = sessions.get(username);
   if (existing) {
     existing.lastActivity = Date.now();
     return existing.port;
   }
-  return startProcess(username, uid);
+
+  // Deduplicate concurrent start requests for the same user
+  if (_starting.has(username)) {
+    return _starting.get(username);
+  }
+
+  const promise = startProcess(username, uid).finally(() => {
+    _starting.delete(username);
+  });
+  _starting.set(username, promise);
+  return promise;
 }
 
 function killUser(username) {

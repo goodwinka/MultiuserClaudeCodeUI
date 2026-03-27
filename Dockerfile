@@ -2,6 +2,16 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# ── Build-time proxy support ───────────────────────────────────────────────────
+# These ARGs make proxy env vars available during RUN commands when passed with
+# --build-arg. In production builds without a proxy they are simply empty.
+ARG HTTP_PROXY=""
+ARG HTTPS_PROXY=""
+ARG http_proxy=""
+ARG https_proxy=""
+ARG NO_PROXY=""
+ARG no_proxy=""
+# Optional PEM-encoded CA certificate to trust (e.g. for TLS-intercepting proxies)
 # ── System packages ────────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
     curl wget git sudo procps \
@@ -9,6 +19,15 @@ RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-venv \
     sqlite3 nginx \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Optional extra CA cert (for TLS-intercepting proxies) ─────────────────────
+ARG EXTRA_CA_CERT=""
+RUN if [ -n "$EXTRA_CA_CERT" ]; then \
+      printf '%s\n' "$EXTRA_CA_CERT" >> /etc/ssl/certs/ca-certificates.crt \
+      && printf '%s\n' "$EXTRA_CA_CERT" > /etc/ssl/certs/extra-ca.pem; \
+    fi
+# Node.js reads this env var to trust extra CAs (used by npm, node, git, etc.)
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 # ── Node.js 22 ─────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \

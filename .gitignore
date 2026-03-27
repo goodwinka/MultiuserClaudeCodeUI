@@ -1,0 +1,3 @@
+node_modules/
+# Local proxy CA cert (environment-specific, not committed)
+anthropic-proxy-ca.pem

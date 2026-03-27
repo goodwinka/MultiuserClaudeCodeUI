@@ -172,7 +172,6 @@ proxy.on('error', (err, req, res) => {
 app.use(async (req, res) => {
   const user = verifyToken(tokenFromReq(req));
   if (!user) return res.redirect(GW + '/login');
-  if (user.blocked) return res.redirect(GW + '/login?error=blocked');
 
   // Re-read from DB to catch block/delete that happened after token was issued
   const dbUser = db.getUserById(user.id);
@@ -213,8 +212,16 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   const user = verifyToken(tokenStr);
-  if (!user || user.blocked) {
+  if (!user) {
     socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  // Re-read from DB to catch block/delete that happened after token was issued
+  const dbUser = db.getUserById(user.id);
+  if (!dbUser || dbUser.blocked) {
+    socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
     socket.destroy();
     return;
   }
