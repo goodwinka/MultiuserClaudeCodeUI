@@ -64,12 +64,40 @@
     bar.appendChild(btn);
     document.body.appendChild(bar);
 
-    // Fetch current username
+    // Fetch current username and role
     fetch('/__gateway/api/me')
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
-        if (data && data.username) {
-          userSpan.textContent = data.username;
+        if (!data) return;
+        if (data.username) userSpan.textContent = data.username;
+        if (data.role === 'admin') {
+          var adminBtn = document.createElement('a');
+          adminBtn.textContent = 'Админ';
+          adminBtn.href = '/__gateway/admin';
+          adminBtn.target = '_blank';
+          adminBtn.style.cssText = [
+            'background:#21262d',
+            'color:#cdd9e5',
+            'border:1px solid #444c56',
+            'border-radius:5px',
+            'padding:3px 10px',
+            'font-size:12px',
+            'cursor:pointer',
+            'font-family:inherit',
+            'text-decoration:none',
+            'transition:background 0.15s',
+          ].join(';');
+          adminBtn.addEventListener('mouseenter', function () {
+            adminBtn.style.background = '#388bfd';
+            adminBtn.style.borderColor = '#388bfd';
+            adminBtn.style.color = '#fff';
+          });
+          adminBtn.addEventListener('mouseleave', function () {
+            adminBtn.style.background = '#21262d';
+            adminBtn.style.borderColor = '#444c56';
+            adminBtn.style.color = '#cdd9e5';
+          });
+          bar.insertBefore(adminBtn, btn);
         }
       })
       .catch(function () {});
