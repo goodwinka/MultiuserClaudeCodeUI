@@ -65,12 +65,29 @@ function setupUserDir(username, uid) {
     try { fs.symlinkSync('/etc/claude/settings.json', settingsLink); } catch {}
   }
 
+  // Create per-user .gitconfig so git works out of the box
+  const gitconfigPath = path.join(home, '.gitconfig');
+  if (!fs.existsSync(gitconfigPath)) {
+    let gitconfig = `[user]\n\tname = ${username}\n\temail = ${username}@localhost\n`;
+    // If a git proxy is configured, include it so user processes inherit it
+    const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
+    if (proxyUrl) {
+      gitconfig += `[http]\n\tproxy = ${proxyUrl}\n`;
+    }
+    try {
+      fs.writeFileSync(gitconfigPath, gitconfig, { mode: 0o644 });
+    } catch (e) {
+      console.warn(`[pm] gitconfig write warning for ${username}:`, e.message);
+    }
+  }
+
   // Ownership so the process (running as uid) can write
   try {
     fs.chownSync(home, uid, uid);
     fs.chownSync(claudeDir, uid, uid);
     fs.chownSync(projectsDir, uid, uid);
     // The symlink target (/etc/claude/settings.json) stays root-owned (644)
+    if (fs.existsSync(gitconfigPath)) fs.chownSync(gitconfigPath, uid, uid);
   } catch (e) {
     console.warn(`[pm] chown warning for ${username}:`, e.message);
   }
@@ -100,6 +117,25 @@ async function startProcess(username, uid) {
     // Local LLM config (inherited from gateway env)
     ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '',
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+    // Git proxy (lowercase variants are used by curl/git/npm)
+    ...(process.env.GIT_PROXY_URL && {
+      http_proxy: process.env.GIT_PROXY_URL,
+      https_proxy: process.env.GIT_PROXY_URL,
+      HTTP_PROXY: process.env.GIT_PROXY_URL,
+      HTTPS_PROXY: process.env.GIT_PROXY_URL,
+    }),
+    ...(process.env.HTTP_PROXY && !process.env.GIT_PROXY_URL && {
+      http_proxy: process.env.HTTP_PROXY,
+      HTTP_PROXY: process.env.HTTP_PROXY,
+    }),
+    ...(process.env.HTTPS_PROXY && !process.env.GIT_PROXY_URL && {
+      https_proxy: process.env.HTTPS_PROXY,
+      HTTPS_PROXY: process.env.HTTPS_PROXY,
+    }),
+    ...(process.env.NO_PROXY && {
+      no_proxy: process.env.NO_PROXY,
+      NO_PROXY: process.env.NO_PROXY,
+    }),
   };
 
   const proc = spawn('node', ['/opt/claudecodeui/server/index.js'], {

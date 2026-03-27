@@ -24,6 +24,12 @@ services:
       SESSION_TIMEOUT_MINUTES: ${SESSION_TIMEOUT_MINUTES:-30}
       # Max concurrent user sessions (0 = unlimited)
       MAX_SESSIONS: ${MAX_SESSIONS:-0}
+      # Git proxy — HTTP(S) proxy for git remote operations
+      # Set to e.g. http://host.docker.internal:34219 to use a local proxy
+      GIT_PROXY_URL: ${GIT_PROXY_URL:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
     restart: unless-stopped
     # Needed to spawn processes with different UIDs for user isolation
     cap_add:
