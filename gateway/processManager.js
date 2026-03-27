@@ -38,8 +38,10 @@ function releasePort(port) {
 // /api/auth/register is open only when no users exist, so we call it once.
 
 async function initializePlatformUser(port, username) {
+  const base = `http://127.0.0.1:${port}`;
   try {
-    const resp = await fetch(`http://127.0.0.1:${port}/api/auth/register`, {
+    // Create user (only succeeds when DB is empty; 403 = already exists, that's fine)
+    const reg = await fetch(`${base}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -47,15 +49,17 @@ async function initializePlatformUser(port, username) {
         password: crypto.randomBytes(16).toString('hex'),
       }),
     });
-    if (resp.ok) {
+    if (reg.ok) {
       console.log(`[pm] platform user initialized for ${username}`);
-    } else {
-      const data = await resp.json().catch(() => ({}));
-      // 403 = user already exists — that's fine (session restart)
-      if (resp.status !== 403) {
-        console.warn(`[pm] platform user init warning for ${username}: ${resp.status}`, data.error || '');
-      }
+    } else if (reg.status !== 403) {
+      const data = await reg.json().catch(() => ({}));
+      console.warn(`[pm] platform user init warning for ${username}: ${reg.status}`, data.error || '');
     }
+
+    // Mark onboarding complete so the UI doesn't show the git-config wizard.
+    // In platform mode authenticateToken uses getFirstUser(), so no token needed.
+    // This call is idempotent — safe to repeat on every session restart.
+    await fetch(`${base}/api/user/complete-onboarding`, { method: 'POST' });
   } catch (err) {
     console.warn(`[pm] platform user init error for ${username}:`, err.message);
   }
