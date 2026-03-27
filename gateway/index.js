@@ -159,14 +159,61 @@ app.post(GW + '/api/admin/sessions/:username/kill', requireAdmin, (req, res) => 
   res.json({ ok: true });
 });
 
+// ── Current-user API ──────────────────────────────────────────────────────────
+
+app.get(GW + '/api/me', (req, res) => {
+  const user = verifyToken(tokenFromReq(req));
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  res.json({ username: user.username, role: user.role });
+});
+
 // ── Proxy to user's claudecodeui ──────────────────────────────────────────────
 
-const proxy = httpProxy.createProxyServer({ xfwd: true });
+const LOGOUT_SCRIPT_TAG = '<script src="/__gateway/static/logout-bar.js"></script>';
+
+const proxy = httpProxy.createProxyServer({ xfwd: true, selfHandleResponse: true });
 proxy.on('error', (err, req, res) => {
   if (res && !res.headersSent) {
     res.writeHead(502, { 'Content-Type': 'text/plain' });
     res.end('Session unavailable. Please reload the page.');
   }
+});
+
+proxy.on('proxyReq', (proxyReq) => {
+  // Ask upstream for uncompressed responses so we can inject into HTML
+  proxyReq.setHeader('accept-encoding', 'identity');
+});
+
+proxy.on('proxyRes', (proxyRes, req, res) => {
+  const contentType = proxyRes.headers['content-type'] || '';
+
+  if (!contentType.includes('text/html')) {
+    // Non-HTML: pipe through unchanged
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+    return;
+  }
+
+  // Buffer HTML response and inject logout bar script
+  const chunks = [];
+  proxyRes.on('data', (chunk) => chunks.push(chunk));
+  proxyRes.on('end', () => {
+    let html = Buffer.concat(chunks).toString('utf8');
+
+    if (html.includes('</body>')) {
+      html = html.replace('</body>', LOGOUT_SCRIPT_TAG + '</body>');
+    } else {
+      html += LOGOUT_SCRIPT_TAG;
+    }
+
+    const headers = Object.assign({}, proxyRes.headers);
+    delete headers['content-length'];
+    delete headers['transfer-encoding'];
+    headers['content-length'] = Buffer.byteLength(html);
+
+    res.writeHead(proxyRes.statusCode, headers);
+    res.end(html);
+  });
 });
 
 app.use(async (req, res) => {
