@@ -4,7 +4,7 @@ services:
   app:
     build: .
     ports:
-      - "80:80"
+      - "${PORT:-80}:80"
     volumes:
       # User project folders — persisted on host
       - ./data/users:/data/users

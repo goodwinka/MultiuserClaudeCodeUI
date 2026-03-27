@@ -5,7 +5,7 @@
 ## Архитектура
 
 ```
-Nginx (80) → Auth Gateway (4000) → Process Manager → ClaudeCodeUI (10000–11000)
+Nginx (PORT, default 80) → Auth Gateway (4000) → Process Manager → ClaudeCodeUI (10000–11000)
 ```
 
 - **Nginx** — reverse proxy, поддержка WebSocket
@@ -20,12 +20,13 @@ cp docker-compose.yml docker-compose.override.yml  # при необходимо
 docker compose up -d
 ```
 
-Открыть `http://localhost`. Войти под `admin` / паролем из `ADMIN_PASSWORD`.
+Открыть `http://localhost/` (или `http://localhost:PORT/` если задан нестандартный порт). Войти под `admin` / паролем из `ADMIN_PASSWORD`.
 
 ## Переменные окружения
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
+| `PORT` | `80` | Порт на хосте (`http://localhost:PORT/`) |
 | `ADMIN_PASSWORD` | `admin123` | Начальный пароль администратора |
 | `JWT_SECRET` | `changeme-...` | Секрет для подписи JWT — **обязательно сменить** |
 | `ANTHROPIC_BASE_URL` | `http://host.docker.internal:11434/v1` | Эндпоинт локальной LLM (Ollama / vLLM / llama.cpp) |
@@ -51,9 +52,9 @@ GIT_PROXY_URL: http://host.docker.internal:34219
 
 | Путь в контейнере | Путь на хосте | Содержимое |
 |---|---|---|
-| `/data/users` | `/opt/ccode_data/users` | Проекты пользователей |
-| `/var/lib/multiuser-ccui` | `/opt/ccode_data/db` | SQLite, логи |
-| `/etc/claude` | `/opt/ccode_data/claude-config` | Глобальные настройки Claude Code |
+| `/data/users` | `./data/users` | Проекты пользователей |
+| `/var/lib/multiuser-ccui` | `./data/db` | SQLite, логи |
+| `/etc/claude` | `./data/claude-config` | Глобальные настройки Claude Code |
 
 ## Изоляция пользователей
 
@@ -61,7 +62,7 @@ GIT_PROXY_URL: http://host.docker.internal:34219
 
 ## Настройка Claude Code
 
-Редактировать `/opt/ccode_data/claude-config/settings.json` на хосте — изменения подхватываются всеми пользователями без перезапуска контейнера.
+Редактировать `./data/claude-config/settings.json` на хосте — изменения подхватываются всеми пользователями без перезапуска контейнера.
 
 ## Структура проекта
 
