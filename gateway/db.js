@@ -69,4 +69,12 @@ function deleteUser(id) {
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
 }
 
-module.exports = { init, nextUid, createUser, findByUsername, getUserById, getAllUsers, blockUser, deleteUser };
+function updateRole(id, role) {
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+}
+
+function updatePassword(id, passwordHash) {
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
+}
+
+module.exports = { init, nextUid, createUser, findByUsername, getUserById, getAllUsers, blockUser, deleteUser, updateRole, updatePassword };
