@@ -159,6 +159,39 @@ app.post(GW + '/api/admin/sessions/:username/kill', requireAdmin, (req, res) => 
   res.json({ ok: true });
 });
 
+app.post(GW + '/api/admin/users', requireAdmin, (req, res) => {
+  const username = (req.body.username || '').trim().toLowerCase();
+  const password = req.body.password || '';
+  const role = req.body.role === 'admin' ? 'admin' : 'user';
+
+  if (!/^[a-z0-9_]{3,20}$/.test(username))
+    return res.status(400).json({ error: 'Недопустимое имя пользователя' });
+  if (password.length < 6)
+    return res.status(400).json({ error: 'Пароль слишком короткий (мин. 6 символов)' });
+  if (db.findByUsername(username))
+    return res.status(400).json({ error: 'Пользователь уже существует' });
+
+  const uid = db.nextUid();
+  const hash = bcrypt.hashSync(password, 10);
+  const user = db.createUser(username, hash, role, uid);
+  pm.setupUserDir(username, uid);
+  res.json(user);
+});
+
+app.patch(GW + '/api/admin/users/:id/role', requireAdmin, (req, res) => {
+  const role = req.body.role === 'admin' ? 'admin' : 'user';
+  db.updateRole(req.params.id, role);
+  res.json({ ok: true });
+});
+
+app.patch(GW + '/api/admin/users/:id/password', requireAdmin, (req, res) => {
+  const password = req.body.password || '';
+  if (password.length < 6)
+    return res.status(400).json({ error: 'Пароль слишком короткий (мин. 6 символов)' });
+  db.updatePassword(req.params.id, bcrypt.hashSync(password, 10));
+  res.json({ ok: true });
+});
+
 // ── Current-user API ──────────────────────────────────────────────────────────
 
 app.get(GW + '/api/me', (req, res) => {

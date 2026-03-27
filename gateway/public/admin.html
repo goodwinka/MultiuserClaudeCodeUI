@@ -24,8 +24,12 @@
   header h1 { font-size: 1.1rem; color: #f0f6fc; }
   header a { color: #8b949e; text-decoration: none; font-size: 0.85rem; }
   header a:hover { color: #e6edf3; }
-  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
-  h2 { font-size: 1rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; margin-top: 28px; }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  h2 {
+    font-size: 1rem; color: #8b949e; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 12px; margin-top: 28px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
   table { width: 100%; border-collapse: collapse; background: #161b22; border-radius: 8px; overflow: hidden; border: 1px solid #30363d; }
   th { background: #21262d; padding: 10px 14px; text-align: left; color: #8b949e; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
   td { padding: 10px 14px; border-top: 1px solid #21262d; vertical-align: middle; }
@@ -34,10 +38,10 @@
     display: inline-block; padding: 2px 8px; border-radius: 20px;
     font-size: 0.75rem; font-weight: 600;
   }
-  .badge-admin  { background: #388bfd22; color: #79c0ff; border: 1px solid #388bfd55; }
-  .badge-user   { background: #23863622; color: #56d364; border: 1px solid #23863655; }
-  .badge-blocked{ background: #f8514922; color: #f85149; border: 1px solid #f8514955; }
-  .badge-active { background: #23863622; color: #56d364; border: 1px solid #23863655; }
+  .badge-admin   { background: #388bfd22; color: #79c0ff; border: 1px solid #388bfd55; }
+  .badge-user    { background: #23863622; color: #56d364; border: 1px solid #23863655; }
+  .badge-blocked { background: #f8514922; color: #f85149; border: 1px solid #f8514955; }
+  .badge-active  { background: #23863622; color: #56d364; border: 1px solid #23863655; }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .btn {
     padding: 5px 12px; border-radius: 6px; border: 1px solid;
@@ -50,17 +54,96 @@
   .btn-green:hover  { background: #56d36422; }
   .btn-yellow { color: #d29922; border-color: #d2992266; }
   .btn-yellow:hover { background: #d2992222; }
+  .btn-blue   { color: #79c0ff; border-color: #388bfd66; }
+  .btn-blue:hover   { background: #388bfd22; }
+  .btn-primary {
+    padding: 7px 16px; border-radius: 6px; border: none;
+    cursor: pointer; font-size: 0.85rem; font-weight: 600;
+    background: #238636; color: #fff; transition: background 0.15s;
+  }
+  .btn-primary:hover { background: #2ea043; }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 14px; margin-bottom: 8px; }
   .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px 20px; }
   .stat-card .num { font-size: 2rem; font-weight: 700; color: #f0f6fc; }
   .stat-card .lbl { font-size: 0.8rem; color: #8b949e; margin-top: 4px; }
+
+  /* Toast */
   #msg { position: fixed; top: 16px; right: 16px; padding: 10px 18px;
          background: #238636; border-radius: 6px; color: #fff; font-size: 0.85rem;
-         display: none; z-index: 100; }
+         display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 500; display: none;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 24px; width: 360px; max-width: 95vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .modal h3 { font-size: 1rem; color: #f0f6fc; margin-bottom: 18px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 0.8rem; color: #8b949e; margin-bottom: 5px; }
+  .form-group input, .form-group select {
+    width: 100%; background: #0d1117; border: 1px solid #30363d;
+    border-radius: 6px; padding: 8px 10px; color: #e6edf3; font-size: 0.9rem;
+    outline: none;
+  }
+  .form-group input:focus, .form-group select:focus { border-color: #388bfd; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+  .btn-cancel {
+    padding: 7px 16px; border-radius: 6px; border: 1px solid #30363d;
+    cursor: pointer; font-size: 0.85rem; background: transparent; color: #8b949e;
+  }
+  .btn-cancel:hover { background: #21262d; color: #e6edf3; }
 </style>
 </head>
 <body>
 <div id="msg"></div>
+
+<!-- Create user modal -->
+<div class="modal-overlay" id="modal-create">
+  <div class="modal">
+    <h3>Создать пользователя</h3>
+    <div class="form-group">
+      <label>Имя пользователя</label>
+      <input id="new-username" type="text" placeholder="только a-z, 0-9, _" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Пароль</label>
+      <input id="new-password" type="password" placeholder="минимум 6 символов">
+    </div>
+    <div class="form-group">
+      <label>Роль</label>
+      <select id="new-role">
+        <option value="user">user</option>
+        <option value="admin">admin</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-create')">Отмена</button>
+      <button class="btn-primary" onclick="createUser()">Создать</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset password modal -->
+<div class="modal-overlay" id="modal-password">
+  <div class="modal">
+    <h3>Сменить пароль: <span id="pwd-username" style="color:#79c0ff"></span></h3>
+    <div class="form-group">
+      <label>Новый пароль</label>
+      <input id="new-pwd" type="password" placeholder="минимум 6 символов">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-password')">Отмена</button>
+      <button class="btn-primary" onclick="submitPassword()">Сохранить</button>
+    </div>
+  </div>
+</div>
 
 <header>
   <h1>Админ-панель — ClaudeCodeUI</h1>
@@ -73,12 +156,17 @@
 <main>
   <!-- Stats -->
   <div class="stat-grid">
-    <div class="stat-card"><div class="num" id="stat-users">—</div><div class="lbl">Пользователей</div></div>
+    <div class="stat-card"><div class="num" id="stat-total">—</div><div class="lbl">Всего пользователей</div></div>
     <div class="stat-card"><div class="num" id="stat-sessions">—</div><div class="lbl">Активных сессий</div></div>
+    <div class="stat-card"><div class="num" id="stat-blocked">—</div><div class="lbl">Заблокировано</div></div>
+    <div class="stat-card"><div class="num" id="stat-admins">—</div><div class="lbl">Администраторов</div></div>
   </div>
 
   <!-- Active sessions -->
-  <h2>Активные сессии</h2>
+  <h2>
+    <span>Активные сессии</span>
+    <button class="btn btn-green" style="font-size:0.75rem;padding:3px 10px" onclick="loadSessions()">Обновить</button>
+  </h2>
   <table>
     <thead><tr>
       <th>Пользователь</th><th>Порт</th><th>PID</th><th>Простой</th><th>Действия</th>
@@ -87,7 +175,10 @@
   </table>
 
   <!-- Users -->
-  <h2>Пользователи</h2>
+  <h2>
+    <span>Пользователи</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openModal('modal-create')">+ Создать</button>
+  </h2>
   <table>
     <thead><tr>
       <th>ID</th><th>Имя</th><th>Роль</th><th>UID</th><th>Создан</th><th>Статус</th><th>Действия</th>
@@ -97,6 +188,8 @@
 </main>
 
 <script>
+let pwdTargetId = null;
+
 function showMsg(text, ok = true) {
   const el = document.getElementById('msg');
   el.textContent = text;
@@ -109,7 +202,10 @@ async function api(method, url, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(url, opts);
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.error || r.statusText);
+  }
   return r.json();
 }
 
@@ -118,6 +214,9 @@ function fmtIdle(sec) {
   if (sec < 3600) return Math.floor(sec/60) + 'м';
   return Math.floor(sec/3600) + 'ч ' + Math.floor((sec%3600)/60) + 'м';
 }
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 async function loadSessions() {
   try {
@@ -130,9 +229,9 @@ async function loadSessions() {
     }
     tbody.innerHTML = data.map(s => `
       <tr>
-        <td>${s.username}</td>
-        <td>${s.port}</td>
-        <td>${s.pid}</td>
+        <td><strong>${s.username}</strong></td>
+        <td style="color:#8b949e">${s.port}</td>
+        <td style="color:#8b949e;font-size:0.8rem">${s.pid}</td>
         <td>${fmtIdle(s.idleSeconds)}</td>
         <td><div class="actions">
           <button class="btn btn-red" onclick="killSession('${s.username}')">Завершить</button>
@@ -145,22 +244,28 @@ async function loadSessions() {
 async function loadUsers() {
   try {
     const data = await api('GET', '/__gateway/api/admin/users');
-    document.getElementById('stat-users').textContent = data.length;
+    document.getElementById('stat-total').textContent = data.length;
+    document.getElementById('stat-blocked').textContent = data.filter(u => u.blocked).length;
+    document.getElementById('stat-admins').textContent = data.filter(u => u.role === 'admin').length;
     const tbody = document.getElementById('users-body');
     tbody.innerHTML = data.map(u => `
       <tr>
-        <td>${u.id}</td>
+        <td style="color:#8b949e">${u.id}</td>
         <td><strong>${u.username}</strong></td>
         <td><span class="badge badge-${u.role}">${u.role}</span></td>
-        <td>${u.uid}</td>
+        <td style="color:#8b949e">${u.uid}</td>
         <td style="color:#8b949e;font-size:0.8rem">${u.created_at.slice(0,16)}</td>
         <td>${u.blocked
           ? '<span class="badge badge-blocked">Заблокирован</span>'
           : '<span class="badge badge-active">Активен</span>'}</td>
         <td><div class="actions">
           ${u.blocked
-            ? `<button class="btn btn-green" onclick="unblock(${u.id})">Разблокировать</button>`
-            : `<button class="btn btn-yellow" onclick="block(${u.id})">Заблокировать</button>`}
+            ? `<button class="btn btn-green" onclick="unblock(${u.id})">Разблок.</button>`
+            : `<button class="btn btn-yellow" onclick="block(${u.id})">Блок.</button>`}
+          <button class="btn btn-blue" onclick="openPasswordModal(${u.id}, '${u.username}')">Пароль</button>
+          ${u.role === 'admin'
+            ? `<button class="btn btn-yellow" onclick="changeRole(${u.id}, 'user')">→ user</button>`
+            : `<button class="btn btn-blue" onclick="changeRole(${u.id}, 'admin')">→ admin</button>`}
           ${u.role !== 'admin'
             ? `<button class="btn btn-red" onclick="deleteUser(${u.id}, '${u.username}')">Удалить</button>`
             : ''}
@@ -204,15 +309,60 @@ async function deleteUser(id, username) {
   } catch(e) { showMsg(e.message, false); }
 }
 
+async function createUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value;
+  const role = document.getElementById('new-role').value;
+  try {
+    await api('POST', '/__gateway/api/admin/users', { username, password, role });
+    showMsg(`Пользователь ${username} создан`);
+    closeModal('modal-create');
+    document.getElementById('new-username').value = '';
+    document.getElementById('new-password').value = '';
+    document.getElementById('new-role').value = 'user';
+    loadUsers();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function changeRole(id, role) {
+  try {
+    await api('PATCH', `/__gateway/api/admin/users/${id}/role`, { role });
+    showMsg(`Роль изменена на ${role}`);
+    loadUsers();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+function openPasswordModal(id, username) {
+  pwdTargetId = id;
+  document.getElementById('pwd-username').textContent = username;
+  document.getElementById('new-pwd').value = '';
+  openModal('modal-password');
+}
+
+async function submitPassword() {
+  const password = document.getElementById('new-pwd').value;
+  try {
+    await api('PATCH', `/__gateway/api/admin/users/${pwdTargetId}/password`, { password });
+    showMsg('Пароль изменён');
+    closeModal('modal-password');
+  } catch(e) { showMsg(e.message, false); }
+}
+
 async function logout() {
   await fetch('/__gateway/auth/logout', { method: 'POST' });
   location.href = '/__gateway/login';
 }
 
-function refresh() { loadUsers(); loadSessions(); }
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
 
+function refresh() { loadUsers(); loadSessions(); }
 refresh();
-setInterval(loadSessions, 10000);   // refresh sessions every 10s
+setInterval(loadSessions, 10000);
 </script>
 </body>
 </html>

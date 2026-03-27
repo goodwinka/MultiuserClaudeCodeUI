@@ -4,7 +4,7 @@
     bar.id = '__gw_logout_bar';
     bar.style.cssText = [
       'position:fixed',
-      'top:0',
+      'bottom:0',
       'right:0',
       'z-index:2147483647',
       'display:flex',
@@ -12,9 +12,9 @@
       'gap:8px',
       'padding:5px 10px',
       'background:rgba(22,27,34,0.92)',
-      'border-bottom-left-radius:8px',
+      'border-top-left-radius:8px',
       'border:1px solid #30363d',
-      'border-top:none',
+      'border-bottom:none',
       'border-right:none',
       'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
       'font-size:12px',
