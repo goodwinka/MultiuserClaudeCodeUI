@@ -60,12 +60,15 @@ COPY scripts/ /opt/scripts/
 RUN chmod +x /opt/scripts/*.sh
 
 # ── Claude global config ───────────────────────────────────────────────────────
-RUN mkdir -p /etc/claude
-COPY claude-config/settings.json /etc/claude/settings.json
-RUN chmod 644 /etc/claude/settings.json
+# Store the default outside volume-mounted paths so entrypoint can seed it
+RUN mkdir -p /opt/defaults/claude
+COPY claude-config/settings.json /opt/defaults/claude/settings.json
+RUN chmod 644 /opt/defaults/claude/settings.json
 
 # ── Runtime directories ────────────────────────────────────────────────────────
-RUN mkdir -p /data/users /var/lib/multiuser-ccui/logs
+# These are created here for non-volume runs; entrypoint re-creates them
+# (volume mounts shadow image content, so entrypoint handles seeding)
+RUN mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude
 
 EXPOSE 80
 

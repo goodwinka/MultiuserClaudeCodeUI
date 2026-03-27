@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT_START = 10000;
 const PORT_END = 11000;
@@ -29,6 +30,35 @@ function allocatePort() {
 
 function releasePort(port) {
   usedPorts.delete(port);
+}
+
+// ── Initialize ClaudeCodeUI user in platform mode ────────────────────────────
+// In platform mode ClaudeCodeUI uses getFirstUser() for every request.
+// If the DB is empty (fresh HOME dir), every API call returns 500 → white screen.
+// /api/auth/register is open only when no users exist, so we call it once.
+
+async function initializePlatformUser(port, username) {
+  try {
+    const resp = await fetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        password: crypto.randomBytes(16).toString('hex'),
+      }),
+    });
+    if (resp.ok) {
+      console.log(`[pm] platform user initialized for ${username}`);
+    } else {
+      const data = await resp.json().catch(() => ({}));
+      // 403 = user already exists — that's fine (session restart)
+      if (resp.status !== 403) {
+        console.warn(`[pm] platform user init warning for ${username}: ${resp.status}`, data.error || '');
+      }
+    }
+  } catch (err) {
+    console.warn(`[pm] platform user init error for ${username}:`, err.message);
+  }
 }
 
 // ── Wait for TCP port to accept connections ──────────────────────────────────
@@ -160,6 +190,7 @@ async function startProcess(username, uid) {
 
   try {
     await waitForPort(port, 30000);
+    await initializePlatformUser(port, username);
     sessions.set(username, session);
     console.log(`[pm] ${username} started on port ${port}`);
   } catch (err) {
