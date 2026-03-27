@@ -41,7 +41,7 @@ RUN npm install -g @anthropic-ai/claude-code
 WORKDIR /opt/claudecodeui
 RUN git clone https://github.com/siteboon/claudecodeui.git . \
     && npm install \
-    && npm run build
+    && VITE_IS_PLATFORM=true npm run build
 
 # ── Gateway dependencies ───────────────────────────────────────────────────────
 WORKDIR /opt/gateway

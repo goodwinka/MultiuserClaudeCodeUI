@@ -7,11 +7,11 @@ services:
       - "80:80"
     volumes:
       # User project folders — persisted on host
-      - /opt/ccode_data/users:/data/users
+      - ./data/users:/data/users
       # DB, logs — persisted on host
-      - /opt/ccode_data/db:/var/lib/multiuser-ccui
+      - ./data/db:/var/lib/multiuser-ccui
       # Global Claude Code settings — edit on host to configure local LLM
-      - /opt/ccode_data/claude-config:/etc/claude
+      - ./data/claude-config:/etc/claude
     environment:
       # Initial admin password (change after first login)
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
