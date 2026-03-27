@@ -239,6 +239,16 @@ function killUser(username) {
   }
 }
 
+function deleteUserDir(username) {
+  const home = `/data/users/${username}`;
+  try {
+    fs.rmSync(home, { recursive: true, force: true });
+    console.log(`[pm] deleted home dir for ${username}`);
+  } catch (e) {
+    console.warn(`[pm] failed to delete home dir for ${username}:`, e.message);
+  }
+}
+
 function getActiveSessions() {
   const result = [];
   for (const [username, s] of sessions) {
@@ -264,4 +274,4 @@ setInterval(() => {
   }
 }, 60_000);
 
-module.exports = { getOrStart, killUser, getActiveSessions, setupUserDir };
+module.exports = { getOrStart, killUser, deleteUserDir, getActiveSessions, setupUserDir };

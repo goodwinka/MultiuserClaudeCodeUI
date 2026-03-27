@@ -1,3 +1,10 @@
 node_modules/
 # Local proxy CA cert (environment-specific, not committed)
 anthropic-proxy-ca.pem
+# Runtime data — keep directory structure but ignore contents
+data/users/*
+data/db/*
+data/claude-config/*
+!data/users/.gitkeep
+!data/db/.gitkeep
+!data/claude-config/.gitkeep
