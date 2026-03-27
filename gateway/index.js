@@ -145,7 +145,10 @@ app.post(GW + '/api/admin/users/:id/unblock', requireAdmin, (req, res) => {
 
 app.delete(GW + '/api/admin/users/:id', requireAdmin, (req, res) => {
   const user = db.getUserById(req.params.id);
-  if (user) pm.killUser(user.username);
+  if (user) {
+    pm.killUser(user.username);
+    pm.deleteUserDir(user.username);
+  }
   db.deleteUser(req.params.id);
   res.json({ ok: true });
 });
