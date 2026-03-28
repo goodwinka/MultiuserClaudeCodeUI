@@ -629,25 +629,29 @@ async function loadPlugins() {
       return;
     }
     container.innerHTML = installed.map(p => {
-      const name = p.plugin || p.name || '?';
-      const desc = (p.manifest?.description || p.description || '').slice(0, 80);
+      // id/plugin field: full "name@marketplace" string used for CLI calls
+      // name field: display-friendly short name
+      const id = p.plugin || p.name || '?';
+      const displayName = p.name || id;
+      const desc = (p.description || '').slice(0, 80);
       const ver = p.version ? `<span style="color:#8b949e;font-size:0.75rem"> v${p.version}</span>` : '';
       const enabled = p.isEnabled !== false;
       const pendingBadge = (p.pendingEnable || p.pendingToggle || p.pendingUpdate) ? '<span class="badge badge-pending" style="margin-left:6px">restart</span>' : '';
       const statusBadge = enabled
         ? `<span class="badge badge-enabled">включён</span>`
         : `<span class="badge badge-blocked">отключён</span>`;
+      const escapedId = id.replace(/'/g, "\\'");
       return `
         <div class="plugin-row">
           <div class="plugin-info">
-            <div class="plugin-name">${name}${ver}${pendingBadge} ${statusBadge}</div>
+            <div class="plugin-name">${displayName}${ver}${pendingBadge} ${statusBadge}</div>
             ${desc ? `<div class="plugin-cmd">${desc}</div>` : ''}
           </div>
           <div class="actions">
             ${enabled
-              ? `<button class="btn btn-yellow" onclick="togglePlugin('${name}', false)">Откл.</button>`
-              : `<button class="btn btn-green" onclick="togglePlugin('${name}', true)">Вкл.</button>`}
-            <button class="btn btn-red" onclick="uninstallPlugin('${name}')">Удалить</button>
+              ? `<button class="btn btn-yellow" onclick="togglePlugin('${escapedId}', false)">Откл.</button>`
+              : `<button class="btn btn-green" onclick="togglePlugin('${escapedId}', true)">Вкл.</button>`}
+            <button class="btn btn-red" onclick="uninstallPlugin('${escapedId}')">Удалить</button>
           </div>
         </div>`;
     }).join('');

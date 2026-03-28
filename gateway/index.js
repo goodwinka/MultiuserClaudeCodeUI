@@ -350,13 +350,38 @@ app.get(GW + '/api/admin/plugins', requireAdmin, async (req, res) => {
   let available = [];
   try {
     const out = await claudeCmd(['plugin', 'list', '--json']);
-    const data = JSON.parse(out || '{}');
-    if (Array.isArray(data)) {
-      installed = data;
-    } else {
-      installed = data.installed || data.plugins || [];
-      available = data.available || [];
+    const data = JSON.parse(out || '[]');
+    // claude plugin list --json returns an array of objects with fields:
+    //   { id, version, scope, enabled, installPath, installedAt, ... }
+    // where id is "plugin-name@marketplace". Normalise to a consistent shape.
+    const arr = Array.isArray(data) ? data : (data.installed || data.plugins || []);
+    for (const p of arr) {
+      const id = p.id || p.plugin || p.name || '';
+      const name = p.name || id.split('@')[0] || id;
+      // Try to read description from installPath/package.json
+      let description = p.description || '';
+      if (!description && p.installPath) {
+        for (const fname of ['package.json', 'manifest.json']) {
+          try {
+            const mf = JSON.parse(fs.readFileSync(path.join(p.installPath, fname), 'utf8'));
+            description = mf.description || '';
+            if (description) break;
+          } catch {}
+        }
+      }
+      installed.push({
+        plugin: id,
+        name,
+        version: p.version && p.version !== 'unknown' ? p.version : undefined,
+        description,
+        isEnabled: p.enabled !== false,
+        scope: p.scope,
+        pendingEnable: p.pendingEnable,
+        pendingToggle: p.pendingToggle,
+        pendingUpdate: p.pendingUpdate,
+      });
     }
+    available = Array.isArray(data) ? [] : (data.available || []);
   } catch {
     // Fallback: read /etc/claude/plugins/ directory directly
     const pluginsDir = '/etc/claude/plugins';
@@ -376,7 +401,6 @@ app.get(GW + '/api/admin/plugins', requireAdmin, async (req, res) => {
           version: manifest.version,
           description: manifest.description,
           isEnabled: true,
-          manifest,
         });
       }
     } catch {}
