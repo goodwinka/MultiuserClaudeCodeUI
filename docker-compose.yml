@@ -12,6 +12,24 @@ services:
       - ${DATA_DIR:-./data}/db:/var/lib/multiuser-ccui
       # Global Claude Code settings — edit on host to configure local LLM
       - ${DATA_DIR:-./data}/claude-config:/etc/claude
+      # ── Host-installed language servers & Qt5 (read-only) ───────────────────
+      # These mounts expose the host's pre-installed binaries and libraries
+      # without baking them into the image.  Comment out any line whose
+      # corresponding tool is not installed on the host.
+      #
+      # Binaries: clangd, pyright, pylsp, bash-language-server,
+      #           cmake-language-server, vscode-{css,html,json}-language-server,
+      #           kotlin-language-server, qmake, etc.
+      - /usr/bin:/opt/host/usr/bin:ro
+      - /usr/local/bin:/opt/host/usr/local/bin:ro
+      # Node/npm global modules required by npm-based language servers
+      - /usr/local/lib/node_modules:/opt/host/usr/local/lib/node_modules:ro
+      # Shared libraries (Qt5, libstdc++, etc.)
+      - /usr/lib:/opt/host/usr/lib:ro
+      # Qt5 / system headers (needed when compiling Qt projects inside container)
+      - /usr/include:/opt/host/usr/include:ro
+      # CUDA Toolkit — nvcc, headers, libraries (comment out if not available)
+      - /usr/local/cuda:/opt/host/usr/local/cuda:ro
     environment:
       # Initial admin password (change after first login)
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
@@ -30,7 +48,16 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      # NVIDIA — expose all GPUs; override via .env if needed
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     restart: unless-stopped
+    # NVIDIA GPU access — requires nvidia-container-toolkit on the host:
+    #   sudo apt install nvidia-container-toolkit
+    #   sudo nvidia-ctk runtime configure --runtime=docker
+    #   sudo systemctl restart docker
+    # Comment out this line if the host has no GPU.
+    runtime: nvidia
     # Needed to spawn processes with different UIDs for user isolation
     cap_add:
       - SETUID
