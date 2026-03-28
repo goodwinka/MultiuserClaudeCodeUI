@@ -300,6 +300,25 @@
   </div>
 </div>
 
+<!-- Skill editor modal -->
+<div class="modal-overlay" id="modal-skill">
+  <div class="modal modal-lg">
+    <h3 id="skill-modal-title">Скилл</h3>
+    <div class="form-group">
+      <label>Имя скилла</label>
+      <input id="skill-name" type="text" placeholder="только a-z, A-Z, 0-9, _, -" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Содержимое (Markdown)</label>
+      <textarea id="skill-content" placeholder="Описание скилла и инструкции для Claude&#10;"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-skill')">Отмена</button>
+      <button class="btn-primary" onclick="saveSkill()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings editor modal -->
 <div class="modal-overlay" id="modal-settings">
   <div class="modal modal-lg">
@@ -406,6 +425,19 @@
     Для использования в Claude Code: <code style="color:#79c0ff">/agents</code>.
   </p>
   <div id="agents-list" class="agents-list">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- Global skills -->
+  <h2>
+    <span>Глобальные скиллы</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openNewSkill()">+ Создать скилл</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Скиллы доступны всем пользователям через <code style="color:#79c0ff">~/.claude/skills/</code> (символическая ссылка на <code style="color:#79c0ff">/etc/claude/skills/</code>).
+    Для использования в Claude Code: <code style="color:#79c0ff">/skill-name</code>.
+  </p>
+  <div id="skills-list" class="agents-list">
     <div style="color:#8b949e">Загрузка…</div>
   </div>
 
@@ -910,6 +942,73 @@ async function deleteAgent(name) {
   } catch(e) { showMsg(e.message, false); }
 }
 
+// ── Skills ───────────────────────────────────────────────────────────────────
+
+let editingSkill = null; // null = new skill, string = existing name
+
+async function loadSkills() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/skills');
+    const container = document.getElementById('skills-list');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет глобальных скиллов</div>';
+      return;
+    }
+    container.innerHTML = data.map(s => `
+      <div class="agent-row">
+        <span class="agent-name">${s.name}.md</span>
+        <div class="actions">
+          <button class="btn btn-blue" onclick="editSkill('${s.name}')">Редактировать</button>
+          <button class="btn btn-red" onclick="deleteSkill('${s.name}')">Удалить</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+function openNewSkill() {
+  editingSkill = null;
+  document.getElementById('skill-modal-title').textContent = 'Создать скилл';
+  document.getElementById('skill-name').value = '';
+  document.getElementById('skill-name').disabled = false;
+  document.getElementById('skill-content').value = '# Инструкции\n\nОпишите задачи и поведение скилла здесь.\n';
+  openModal('modal-skill');
+}
+
+async function editSkill(name) {
+  try {
+    const data = await api('GET', `/__gateway/api/admin/skills/${name}`);
+    editingSkill = name;
+    document.getElementById('skill-modal-title').textContent = `Редактировать: ${name}`;
+    document.getElementById('skill-name').value = name;
+    document.getElementById('skill-name').disabled = true;
+    document.getElementById('skill-content').value = data.content;
+    openModal('modal-skill');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveSkill() {
+  const name = editingSkill || document.getElementById('skill-name').value.trim();
+  const content = document.getElementById('skill-content').value;
+  if (!name) return showMsg('Укажите имя скилла', false);
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return showMsg('Недопустимое имя скилла', false);
+  try {
+    await api('PUT', `/__gateway/api/admin/skills/${name}`, { content });
+    showMsg(editingSkill ? 'Скилл обновлён' : 'Скилл создан');
+    closeModal('modal-skill');
+    loadSkills();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function deleteSkill(name) {
+  if (!confirm(`Удалить скилл ${name}?`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/skills/${name}`);
+    showMsg('Скилл удалён');
+    loadSkills();
+  } catch(e) { showMsg(e.message, false); }
+}
+
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 async function openSettings() {
@@ -936,7 +1035,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
-function refresh() { loadUsers(); loadSessions(); loadPlugins(); loadMarketplaces(); loadAgents(); loadMcp(); }
+function refresh() { loadUsers(); loadSessions(); loadPlugins(); loadMarketplaces(); loadAgents(); loadSkills(); loadMcp(); }
 refresh();
 setInterval(loadSessions, 10000);
 </script>

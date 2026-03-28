@@ -240,6 +240,46 @@ app.delete(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
   } catch { res.status(404).json({ error: 'Not found' }); }
 });
 
+// ── Global skills API ─────────────────────────────────────────────────────────
+
+const SKILLS_DIR = '/etc/claude/skills';
+const SKILL_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+app.get(GW + '/api/admin/skills', requireAdmin, (req, res) => {
+  try {
+    const files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith('.md'));
+    res.json(files.map(f => ({ name: f.slice(0, -3) })));
+  } catch { res.json([]); }
+});
+
+app.get(GW + '/api/admin/skills/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!SKILL_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    const content = fs.readFileSync(path.join(SKILLS_DIR, name + '.md'), 'utf8');
+    res.json({ name, content });
+  } catch { res.status(404).json({ error: 'Not found' }); }
+});
+
+app.put(GW + '/api/admin/skills/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!SKILL_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
+  fs.mkdirSync(SKILLS_DIR, { recursive: true });
+  fs.writeFileSync(path.join(SKILLS_DIR, name + '.md'), content, { mode: 0o644 });
+  res.json({ ok: true });
+});
+
+app.delete(GW + '/api/admin/skills/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!SKILL_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    fs.unlinkSync(path.join(SKILLS_DIR, name + '.md'));
+    res.json({ ok: true });
+  } catch { res.status(404).json({ error: 'Not found' }); }
+});
+
 // ── Global settings API ───────────────────────────────────────────────────────
 
 const SETTINGS_PATH = '/etc/claude/settings.json';
