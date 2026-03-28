@@ -162,7 +162,8 @@ async function startProcess(username, uid) {
     // (clangd, pyright, pylsp, bash-language-server, cmake-language-server,
     //  vscode-*-language-server, kotlin-language-server, qmake …) installed
     // on the host are found inside the container (see docker-compose.yml).
-    PATH: '/opt/host/usr/local/bin:/opt/host/usr/bin:' +
+    // /etc/claude/npm-global/bin — plugin binaries installed by `claude plugin install`
+    PATH: '/etc/claude/npm-global/bin:/opt/host/usr/local/bin:/opt/host/usr/bin:' +
           (process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'),
     LD_LIBRARY_PATH: '/opt/host/usr/lib:/opt/host/usr/lib/x86_64-linux-gnu:' +
                      (process.env.LD_LIBRARY_PATH || ''),

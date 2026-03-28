@@ -272,12 +272,31 @@ app.put(GW + '/api/admin/settings', requireAdmin, (req, res) => {
 // The global "home" whose .claude → /etc/claude, so `claude plugin` commands
 // write/read from the shared /etc/claude/plugins directory.
 const CLAUDE_GLOBAL_HOME = '/var/lib/claude-global';
-const CLAUDE_BIN = '/opt/node22/bin/claude';
+
+// Resolve the `claude` binary at startup from PATH (works with any Node.js
+// install location — avoids hard-coding paths like /opt/node22/bin/claude).
+const CLAUDE_BIN = (() => {
+  for (const dir of (process.env.PATH || '').split(':')) {
+    const p = path.join(dir, 'claude');
+    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch {}
+  }
+  return 'claude'; // fallback: let execFile search PATH itself
+})();
+
+// npm prefix inside the mounted volume so plugin packages are persisted on
+// the host and survive container restarts.
+const CLAUDE_NPM_PREFIX = '/etc/claude/npm-global';
 
 function claudeCmd(args, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     execFile(CLAUDE_BIN, args, {
-      env: { ...process.env, HOME: CLAUDE_GLOBAL_HOME },
+      env: {
+        ...process.env,
+        HOME: CLAUDE_GLOBAL_HOME,
+        // Keep npm packages inside the volume mount so they appear on the host
+        npm_config_prefix: CLAUDE_NPM_PREFIX,
+        npm_config_cache: '/etc/claude/npm-cache',
+      },
       timeout: timeoutMs,
     }, (err, stdout, stderr) => {
       if (err) return reject(new Error(stderr || err.message));

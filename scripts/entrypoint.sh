@@ -29,7 +29,9 @@ if [ -d /opt/host/usr/local/cuda ]; then
 fi
 
 # ── Ensure data directories exist ─────────────────────────────────────────────
-mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude /etc/claude/agents /etc/claude/plugins
+mkdir -p /data/users /var/lib/multiuser-ccui/logs \
+         /etc/claude /etc/claude/agents /etc/claude/plugins \
+         /etc/claude/npm-global /etc/claude/npm-cache
 
 # Seed default Claude settings if the volume was mounted empty
 if [ ! -f /etc/claude/settings.json ]; then
