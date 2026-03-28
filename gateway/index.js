@@ -306,10 +306,42 @@ function claudeCmd(args, timeoutMs = 120000) {
 }
 
 app.get(GW + '/api/admin/plugins', requireAdmin, async (req, res) => {
+  let installed = [];
+  let available = [];
   try {
     const out = await claudeCmd(['plugin', 'list', '--json']);
-    res.json(JSON.parse(out || '{"installed":[],"available":[]}'));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const data = JSON.parse(out || '{}');
+    if (Array.isArray(data)) {
+      installed = data;
+    } else {
+      installed = data.installed || data.plugins || [];
+      available = data.available || [];
+    }
+  } catch {
+    // Fallback: read /etc/claude/plugins/ directory directly
+    const pluginsDir = '/etc/claude/plugins';
+    try {
+      const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
+      for (const entry of entries.filter(e => e.isDirectory())) {
+        let manifest = {};
+        for (const fname of ['package.json', 'manifest.json']) {
+          try {
+            manifest = JSON.parse(fs.readFileSync(path.join(pluginsDir, entry.name, fname), 'utf8'));
+            break;
+          } catch {}
+        }
+        installed.push({
+          plugin: manifest.name || entry.name,
+          name: manifest.name || entry.name,
+          version: manifest.version,
+          description: manifest.description,
+          isEnabled: true,
+          manifest,
+        });
+      }
+    } catch {}
+  }
+  res.json({ installed, available });
 });
 
 app.post(GW + '/api/admin/plugins/install', requireAdmin, async (req, res) => {
@@ -355,10 +387,22 @@ app.post(GW + '/api/admin/plugins/disable', requireAdmin, async (req, res) => {
 // ── Marketplace API ───────────────────────────────────────────────────────────
 
 app.get(GW + '/api/admin/marketplaces', requireAdmin, async (req, res) => {
+  let marketplaces = [];
   try {
     const out = await claudeCmd(['plugin', 'marketplace', 'list', '--json']);
-    res.json(JSON.parse(out || '[]'));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const data = JSON.parse(out || '[]');
+    marketplaces = Array.isArray(data) ? data : (data.marketplaces || []);
+  } catch {}
+  // Also include extraKnownMarketplaces from settings.json so that
+  // claude-plugins-official (registered at startup) is always visible.
+  const settings = readSettings();
+  const extra = settings.extraKnownMarketplaces || {};
+  for (const [name, cfg] of Object.entries(extra)) {
+    if (!marketplaces.find(m => (m.name || m.id) === name)) {
+      marketplaces.push({ name, ...cfg });
+    }
+  }
+  res.json(marketplaces);
 });
 
 app.post(GW + '/api/admin/marketplaces', requireAdmin, async (req, res) => {
