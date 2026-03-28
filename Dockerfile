@@ -22,6 +22,20 @@ RUN apt-get update && apt-get install -y \
     qtbase5-dev qt5-qmake qttools5-dev-tools \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Optional extra CA cert (for TLS-intercepting proxies) ─────────────────────
+ARG EXTRA_CA_CERT=""
+RUN if [ -n "$EXTRA_CA_CERT" ]; then \
+      printf '%s\n' "$EXTRA_CA_CERT" >> /etc/ssl/certs/ca-certificates.crt \
+      && printf '%s\n' "$EXTRA_CA_CERT" > /etc/ssl/certs/extra-ca.pem; \
+    fi
+# Node.js reads this env var to trust extra CAs (used by npm, node, git, etc.)
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
+# ── Node.js 22 ─────────────────────────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── npm-based language servers ─────────────────────────────────────────────────
 RUN npm install -g \
     pyright \
@@ -42,20 +56,6 @@ RUN curl -fsSL \
     && ln -s /opt/kotlin-language-server/server/bin/kotlin-language-server \
              /usr/local/bin/kotlin-language-server \
     && rm /tmp/kotlin-ls.zip
-
-# ── Optional extra CA cert (for TLS-intercepting proxies) ─────────────────────
-ARG EXTRA_CA_CERT=""
-RUN if [ -n "$EXTRA_CA_CERT" ]; then \
-      printf '%s\n' "$EXTRA_CA_CERT" >> /etc/ssl/certs/ca-certificates.crt \
-      && printf '%s\n' "$EXTRA_CA_CERT" > /etc/ssl/certs/extra-ca.pem; \
-    fi
-# Node.js reads this env var to trust extra CAs (used by npm, node, git, etc.)
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
-
-# ── Node.js 22 ─────────────────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
 
 # ── Claude Code CLI ────────────────────────────────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code
