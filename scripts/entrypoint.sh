@@ -23,6 +23,23 @@ if [ ! -f /etc/claude/settings.json ]; then
   chmod 644 /etc/claude/settings.json
 fi
 
+# Ensure the official plugin marketplace is registered (idempotent, covers upgrades)
+node -e "
+const fs = require('fs');
+const f = '/etc/claude/settings.json';
+try {
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  if (!s.extraKnownMarketplaces) s.extraKnownMarketplaces = {};
+  if (!s.extraKnownMarketplaces['claude-plugins-official']) {
+    s.extraKnownMarketplaces['claude-plugins-official'] = {
+      source: { source: 'github', repo: 'anthropics/claude-plugins-official' }
+    };
+    fs.writeFileSync(f, JSON.stringify(s, null, 2) + '\n');
+    console.log('Registered claude-plugins-official marketplace in settings');
+  }
+} catch(e) { console.error('Warning: could not patch settings.json:', e.message); }
+" 2>&1 || true
+
 # Ensure shared directories are world-readable/executable
 chmod 755 /etc/claude/agents /etc/claude/plugins
 

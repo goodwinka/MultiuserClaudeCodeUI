@@ -95,20 +95,34 @@ function setupUserDir(username, uid) {
 
   // Symlink global claude settings (read-only for user processes)
   const settingsLink = path.join(claudeDir, 'settings.json');
-  if (!fs.existsSync(settingsLink)) {
-    try { fs.symlinkSync('/etc/claude/settings.json', settingsLink); } catch {}
+  const settingsIsSymlink = (() => { try { return fs.lstatSync(settingsLink).isSymbolicLink(); } catch { return false; } })();
+  if (!settingsIsSymlink) {
+    try {
+      if (fs.existsSync(settingsLink)) fs.rmSync(settingsLink, { force: true });
+      fs.symlinkSync('/etc/claude/settings.json', settingsLink);
+    } catch {}
   }
 
   // Symlink global agents directory (read-only for user processes)
   const agentsLink = path.join(claudeDir, 'agents');
-  if (!fs.existsSync(agentsLink)) {
-    try { fs.symlinkSync('/etc/claude/agents', agentsLink); } catch {}
+  const agentsIsSymlink = (() => { try { return fs.lstatSync(agentsLink).isSymbolicLink(); } catch { return false; } })();
+  if (!agentsIsSymlink) {
+    try {
+      if (fs.existsSync(agentsLink)) fs.rmSync(agentsLink, { recursive: true, force: true });
+      fs.symlinkSync('/etc/claude/agents', agentsLink);
+    } catch {}
   }
 
-  // Symlink global plugins directory (read-only for user processes)
+  // Symlink global plugins directory (read-only for user processes).
+  // Use lstat to distinguish a real symlink from a plain directory that
+  // Claude Code may have created during an earlier session.
   const pluginsLink = path.join(claudeDir, 'plugins');
-  if (!fs.existsSync(pluginsLink)) {
-    try { fs.symlinkSync('/etc/claude/plugins', pluginsLink); } catch {}
+  const pluginsIsSymlink = (() => { try { return fs.lstatSync(pluginsLink).isSymbolicLink(); } catch { return false; } })();
+  if (!pluginsIsSymlink) {
+    try {
+      if (fs.existsSync(pluginsLink)) fs.rmSync(pluginsLink, { recursive: true, force: true });
+      fs.symlinkSync('/etc/claude/plugins', pluginsLink);
+    } catch {}
   }
 
   // Create per-user .gitconfig so git works out of the box
