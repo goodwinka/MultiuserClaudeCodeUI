@@ -99,6 +99,18 @@ function setupUserDir(username, uid) {
     try { fs.symlinkSync('/etc/claude/settings.json', settingsLink); } catch {}
   }
 
+  // Symlink global agents directory (read-only for user processes)
+  const agentsLink = path.join(claudeDir, 'agents');
+  if (!fs.existsSync(agentsLink)) {
+    try { fs.symlinkSync('/etc/claude/agents', agentsLink); } catch {}
+  }
+
+  // Symlink global plugins directory (read-only for user processes)
+  const pluginsLink = path.join(claudeDir, 'plugins');
+  if (!fs.existsSync(pluginsLink)) {
+    try { fs.symlinkSync('/etc/claude/plugins', pluginsLink); } catch {}
+  }
+
   // Create per-user .gitconfig so git works out of the box
   const gitconfigPath = path.join(home, '.gitconfig');
   if (!fs.existsSync(gitconfigPath)) {

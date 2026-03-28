@@ -8,6 +8,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const httpProxy = require('http-proxy');
 const path = require('path');
+const fs = require('fs');
+
+const { execFile } = require('child_process');
 
 const db = require('./db');
 const pm = require('./processManager');
@@ -194,6 +197,210 @@ app.patch(GW + '/api/admin/users/:id/password', requireAdmin, (req, res) => {
   if (password.length < 6)
     return res.status(400).json({ error: 'Пароль слишком короткий (мин. 6 символов)' });
   db.updatePassword(req.params.id, bcrypt.hashSync(password, 10));
+  res.json({ ok: true });
+});
+
+// ── Global agents API ─────────────────────────────────────────────────────────
+
+const AGENTS_DIR = '/etc/claude/agents';
+const AGENT_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+app.get(GW + '/api/admin/agents', requireAdmin, (req, res) => {
+  try {
+    const files = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.md'));
+    res.json(files.map(f => ({ name: f.slice(0, -3) })));
+  } catch { res.json([]); }
+});
+
+app.get(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    const content = fs.readFileSync(path.join(AGENTS_DIR, name + '.md'), 'utf8');
+    res.json({ name, content });
+  } catch { res.status(404).json({ error: 'Not found' }); }
+});
+
+app.put(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
+  fs.mkdirSync(AGENTS_DIR, { recursive: true });
+  fs.writeFileSync(path.join(AGENTS_DIR, name + '.md'), content, { mode: 0o644 });
+  res.json({ ok: true });
+});
+
+app.delete(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    fs.unlinkSync(path.join(AGENTS_DIR, name + '.md'));
+    res.json({ ok: true });
+  } catch { res.status(404).json({ error: 'Not found' }); }
+});
+
+// ── Global settings API ───────────────────────────────────────────────────────
+
+const SETTINGS_PATH = '/etc/claude/settings.json';
+
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')); } catch { return {}; }
+}
+
+function writeSettings(obj) {
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(obj, null, 2) + '\n', { mode: 0o644 });
+}
+
+app.get(GW + '/api/admin/settings', requireAdmin, (req, res) => {
+  try {
+    const content = fs.readFileSync(SETTINGS_PATH, 'utf8');
+    res.json({ content });
+  } catch { res.json({ content: '{}' }); }
+});
+
+app.put(GW + '/api/admin/settings', requireAdmin, (req, res) => {
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
+  try { JSON.parse(content); } catch { return res.status(400).json({ error: 'Некорректный JSON' }); }
+  fs.writeFileSync(SETTINGS_PATH, content, { mode: 0o644 });
+  res.json({ ok: true });
+});
+
+// ── Claude Code plugins API ───────────────────────────────────────────────────
+
+// The global "home" whose .claude → /etc/claude, so `claude plugin` commands
+// write/read from the shared /etc/claude/plugins directory.
+const CLAUDE_GLOBAL_HOME = '/var/lib/claude-global';
+const CLAUDE_BIN = '/opt/node22/bin/claude';
+
+function claudeCmd(args, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    execFile(CLAUDE_BIN, args, {
+      env: { ...process.env, HOME: CLAUDE_GLOBAL_HOME },
+      timeout: timeoutMs,
+    }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout);
+    });
+  });
+}
+
+app.get(GW + '/api/admin/plugins', requireAdmin, async (req, res) => {
+  try {
+    const out = await claudeCmd(['plugin', 'list', '--json']);
+    res.json(JSON.parse(out || '{"installed":[],"available":[]}'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/install', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'install', plugin, '--scope', 'user'], 180000);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/uninstall', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'uninstall', plugin]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/enable', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'enable', plugin]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/disable', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'disable', plugin]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Marketplace API ───────────────────────────────────────────────────────────
+
+app.get(GW + '/api/admin/marketplaces', requireAdmin, async (req, res) => {
+  try {
+    const out = await claudeCmd(['plugin', 'marketplace', 'list', '--json']);
+    res.json(JSON.parse(out || '[]'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/marketplaces', requireAdmin, async (req, res) => {
+  const { source } = req.body;
+  if (!source || typeof source !== 'string') return res.status(400).json({ error: 'source required' });
+  try {
+    const out = await claudeCmd(['plugin', 'marketplace', 'add', source, '--scope', 'user'], 180000);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete(GW + '/api/admin/marketplaces/:name', requireAdmin, async (req, res) => {
+  const { name } = req.params;
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    const out = await claudeCmd(['plugin', 'marketplace', 'remove', name]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── MCP servers (plugins) API ─────────────────────────────────────────────────
+
+const MCP_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+app.get(GW + '/api/admin/mcp', requireAdmin, (req, res) => {
+  const settings = readSettings();
+  const servers = settings.mcpServers || {};
+  res.json(Object.entries(servers).map(([name, cfg]) => ({ name, ...cfg })));
+});
+
+app.put(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!MCP_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  const { type, command, args, env, url, headers, disabled } = req.body;
+  let cfg;
+  if (type === 'sse') {
+    if (!url) return res.status(400).json({ error: 'URL required for SSE server' });
+    cfg = { type: 'sse', url };
+    if (headers && Object.keys(headers).length) cfg.headers = headers;
+  } else {
+    if (!command) return res.status(400).json({ error: 'Command required' });
+    cfg = { command };
+    if (Array.isArray(args) && args.length) cfg.args = args;
+    if (env && Object.keys(env).length) cfg.env = env;
+  }
+  if (disabled) cfg.disabled = true;
+  const settings = readSettings();
+  settings.mcpServers = settings.mcpServers || {};
+  settings.mcpServers[name] = cfg;
+  writeSettings(settings);
+  res.json({ ok: true });
+});
+
+app.delete(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!MCP_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  const settings = readSettings();
+  if (!settings.mcpServers || !settings.mcpServers[name])
+    return res.status(404).json({ error: 'Not found' });
+  delete settings.mcpServers[name];
+  writeSettings(settings);
   res.json({ ok: true });
 });
 

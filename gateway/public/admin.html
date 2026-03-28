@@ -99,6 +99,42 @@
     cursor: pointer; font-size: 0.85rem; background: transparent; color: #8b949e;
   }
   .btn-cancel:hover { background: #21262d; color: #e6edf3; }
+
+  /* Large editor modal */
+  .modal-lg { width: 680px; max-width: 95vw; }
+  .form-group textarea {
+    width: 100%; background: #0d1117; border: 1px solid #30363d;
+    border-radius: 6px; padding: 8px 10px; color: #e6edf3; font-size: 0.85rem;
+    outline: none; font-family: 'Courier New', monospace; resize: vertical;
+    min-height: 320px;
+  }
+  .form-group textarea:focus { border-color: #388bfd; }
+  .plugin-list, .agents-list { display: flex; flex-direction: column; gap: 8px; }
+  .plugin-row, .agent-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px 14px;
+  }
+  .plugin-row .plugin-info { flex: 1; min-width: 0; }
+  .plugin-row .plugin-name { font-weight: 600; color: #f0f6fc; font-size: 0.9rem; }
+  .plugin-row .plugin-cmd  { font-size: 0.75rem; color: #8b949e; margin-top: 2px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plugin-row .actions, .agent-row .actions { display: flex; gap: 6px; flex-shrink: 0; margin-left: 12px; }
+  .agent-row .agent-name { font-weight: 600; color: #f0f6fc; font-size: 0.9rem; }
+  .badge-disabled { background: #30363d44; color: #8b949e; border: 1px solid #30363d; }
+  .kv-pair { display: flex; gap: 6px; margin-bottom: 6px; }
+  .kv-pair input { flex: 1; }
+  .kv-add { font-size: 0.78rem; color: #79c0ff; background: none; border: none; cursor: pointer; padding: 2px 0; }
+  .kv-add:hover { text-decoration: underline; }
+  .kv-rm { padding: 5px 8px; border-radius: 4px; border: 1px solid #f8514966; color: #f85149; background: none; cursor: pointer; font-size: 0.75rem; flex-shrink: 0; }
+  #mcp-stdio-fields, #mcp-sse-fields { display: none; }
+  #mcp-stdio-fields.show, #mcp-sse-fields.show { display: block; }
+  .badge-enabled  { background: #23863622; color: #56d364; border: 1px solid #23863655; }
+  .badge-pending  { background: #d2992222; color: #d29922; border: 1px solid #d2992255; }
+  pre.output-box {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px; font-size: 0.78rem; color: #8b949e; max-height: 160px;
+    overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin-top: 8px;
+  }
 </style>
 </head>
 <body>
@@ -145,6 +181,139 @@
   </div>
 </div>
 
+<!-- Plugin install modal -->
+<div class="modal-overlay" id="modal-plugin-install">
+  <div class="modal">
+    <h3>Установить плагин</h3>
+    <div class="form-group">
+      <label>Идентификатор плагина</label>
+      <input id="plugin-install-name" type="text" placeholder="plugin-name или plugin@marketplace" autocomplete="off">
+      <div style="font-size:0.75rem;color:#8b949e;margin-top:4px">
+        Формат: <code style="color:#79c0ff">plugin-name</code> или <code style="color:#79c0ff">plugin-name@marketplace-id</code>
+      </div>
+    </div>
+    <div id="plugin-install-output" style="display:none">
+      <pre class="output-box" id="plugin-install-log"></pre>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-plugin-install')">Закрыть</button>
+      <button class="btn-primary" id="plugin-install-btn" onclick="installPlugin()">Установить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Marketplace add modal -->
+<div class="modal-overlay" id="modal-marketplace-add">
+  <div class="modal">
+    <h3>Добавить marketplace</h3>
+    <div class="form-group">
+      <label>Источник</label>
+      <input id="marketplace-source" type="text" placeholder="https://github.com/owner/repo" autocomplete="off">
+      <div style="font-size:0.75rem;color:#8b949e;margin-top:4px">
+        GitHub repo, git URL (.git), npm-пакет или локальный путь к marketplace.json
+      </div>
+    </div>
+    <div id="marketplace-add-output" style="display:none">
+      <pre class="output-box" id="marketplace-add-log"></pre>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-marketplace-add')">Закрыть</button>
+      <button class="btn-primary" id="marketplace-add-btn" onclick="addMarketplace()">Добавить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MCP server modal -->
+<div class="modal-overlay" id="modal-mcp">
+  <div class="modal modal-lg">
+    <h3 id="mcp-modal-title">MCP-сервер</h3>
+    <div class="form-group">
+      <label>Имя (идентификатор)</label>
+      <input id="mcp-name" type="text" placeholder="только a-z, A-Z, 0-9, _, -" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Тип</label>
+      <select id="mcp-type" onchange="mcpTypeChange()">
+        <option value="stdio">stdio — команда (npx, node, python…)</option>
+        <option value="sse">sse — HTTP/SSE endpoint (URL)</option>
+      </select>
+    </div>
+
+    <div id="mcp-stdio-fields">
+      <div class="form-group">
+        <label>Команда</label>
+        <input id="mcp-command" type="text" placeholder="npx">
+      </div>
+      <div class="form-group">
+        <label>Аргументы (по одному на строку)</label>
+        <textarea id="mcp-args" style="min-height:80px" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/data"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Переменные окружения</label>
+        <div id="mcp-env-list"></div>
+        <button class="kv-add" onclick="addEnvRow()">+ Добавить переменную</button>
+      </div>
+    </div>
+
+    <div id="mcp-sse-fields">
+      <div class="form-group">
+        <label>URL</label>
+        <input id="mcp-url" type="text" placeholder="http://localhost:3000/sse">
+      </div>
+      <div class="form-group">
+        <label>HTTP-заголовки</label>
+        <div id="mcp-headers-list"></div>
+        <button class="kv-add" onclick="addHeaderRow()">+ Добавить заголовок</button>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:6px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="mcp-disabled" type="checkbox" style="width:auto">
+        Отключён (disabled)
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-mcp')">Отмена</button>
+      <button class="btn-primary" onclick="saveMcp()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Agent editor modal -->
+<div class="modal-overlay" id="modal-agent">
+  <div class="modal modal-lg">
+    <h3 id="agent-modal-title">Агент</h3>
+    <div class="form-group">
+      <label>Имя агента</label>
+      <input id="agent-name" type="text" placeholder="только a-z, A-Z, 0-9, _, -" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Содержимое (Markdown с YAML-фронтматтером)</label>
+      <textarea id="agent-content" placeholder="---&#10;name: my-agent&#10;description: Описание агента&#10;---&#10;&#10;# Инструкции агента&#10;"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-agent')">Отмена</button>
+      <button class="btn-primary" onclick="saveAgent()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings editor modal -->
+<div class="modal-overlay" id="modal-settings">
+  <div class="modal modal-lg">
+    <h3>Глобальные настройки Claude (settings.json)</h3>
+    <div class="form-group">
+      <textarea id="settings-content" style="min-height:400px"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-settings')">Отмена</button>
+      <button class="btn-primary" onclick="saveSettings()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <h1>Админ-панель — ClaudeCodeUI</h1>
   <div style="display:flex;gap:20px;align-items:center">
@@ -185,6 +354,69 @@
     </tr></thead>
     <tbody id="users-body"><tr><td colspan="7" style="color:#8b949e">Загрузка…</td></tr></tbody>
   </table>
+
+  <!-- Claude Code plugins -->
+  <h2>
+    <span>Плагины Claude Code</span>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-green" style="font-size:0.75rem;padding:3px 10px" onclick="loadPlugins()">Обновить</button>
+      <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openModal('modal-plugin-install')">+ Установить</button>
+    </div>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Устанавливаются через <code style="color:#79c0ff">claude plugin install</code>. Хранятся в <code style="color:#79c0ff">/etc/claude/plugins/</code> — доступны всем пользователям.
+    После установки/удаления нужно перезапустить сессии.
+  </p>
+  <div id="plugins-list" class="plugin-list" style="margin-bottom:8px">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- Marketplaces -->
+  <h2>
+    <span>Marketplaces</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openModal('modal-marketplace-add')">+ Добавить</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Источники плагинов. После добавления marketplace становятся доступны плагины из него.
+  </p>
+  <div id="marketplaces-list" class="plugin-list" style="margin-bottom:8px">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- MCP servers (plugins) -->
+  <h2>
+    <span>MCP-серверы (плагины)</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openNewMcp()">+ Добавить плагин</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    MCP-серверы глобально доступны всем пользователям через <code style="color:#79c0ff">settings.json → mcpServers</code>.
+    После добавления перезапустите сессии пользователей.
+  </p>
+  <div id="mcp-list" class="plugin-list">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- Global agents -->
+  <h2>
+    <span>Глобальные агенты</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openNewAgent()">+ Создать агента</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Агенты доступны всем пользователям через <code style="color:#79c0ff">~/.claude/agents/</code> (символическая ссылка на <code style="color:#79c0ff">/etc/claude/agents/</code>).
+    Для использования в Claude Code: <code style="color:#79c0ff">/agents</code>.
+  </p>
+  <div id="agents-list" class="agents-list">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- Global settings -->
+  <h2>
+    <span>Настройки Claude (settings.json)</span>
+    <button class="btn btn-blue" style="font-size:0.75rem;padding:3px 10px" onclick="openSettings()">Редактировать</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Глобальный файл <code style="color:#79c0ff">/etc/claude/settings.json</code> — настройки MCP-серверов, разрешений и переменных окружения для всех пользователей.
+  </p>
 </main>
 
 <script>
@@ -353,6 +585,350 @@ async function logout() {
   location.href = '/__gateway/login';
 }
 
+// ── Plugins ───────────────────────────────────────────────────────────────────
+
+async function loadPlugins() {
+  const container = document.getElementById('plugins-list');
+  try {
+    const data = await api('GET', '/__gateway/api/admin/plugins');
+    const installed = data.installed || [];
+    if (!installed.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет установленных плагинов</div>';
+      return;
+    }
+    container.innerHTML = installed.map(p => {
+      const name = p.plugin || p.name || '?';
+      const desc = (p.manifest?.description || p.description || '').slice(0, 80);
+      const ver = p.version ? `<span style="color:#8b949e;font-size:0.75rem"> v${p.version}</span>` : '';
+      const enabled = p.isEnabled !== false;
+      const pendingBadge = (p.pendingEnable || p.pendingToggle || p.pendingUpdate) ? '<span class="badge badge-pending" style="margin-left:6px">restart</span>' : '';
+      const statusBadge = enabled
+        ? `<span class="badge badge-enabled">включён</span>`
+        : `<span class="badge badge-blocked">отключён</span>`;
+      return `
+        <div class="plugin-row">
+          <div class="plugin-info">
+            <div class="plugin-name">${name}${ver}${pendingBadge} ${statusBadge}</div>
+            ${desc ? `<div class="plugin-cmd">${desc}</div>` : ''}
+          </div>
+          <div class="actions">
+            ${enabled
+              ? `<button class="btn btn-yellow" onclick="togglePlugin('${name}', false)">Откл.</button>`
+              : `<button class="btn btn-green" onclick="togglePlugin('${name}', true)">Вкл.</button>`}
+            <button class="btn btn-red" onclick="uninstallPlugin('${name}')">Удалить</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { container.innerHTML = `<div style="color:#f85149">${e.message}</div>`; }
+}
+
+async function installPlugin() {
+  const name = document.getElementById('plugin-install-name').value.trim();
+  if (!name) return showMsg('Укажите имя плагина', false);
+  const btn = document.getElementById('plugin-install-btn');
+  const logEl = document.getElementById('plugin-install-log');
+  const outDiv = document.getElementById('plugin-install-output');
+  btn.disabled = true; btn.textContent = 'Устанавливаю…';
+  outDiv.style.display = 'block'; logEl.textContent = '...';
+  try {
+    const data = await api('POST', '/__gateway/api/admin/plugins/install', { plugin: name });
+    logEl.textContent = data.output || 'OK';
+    showMsg('Плагин установлен. Перезапустите сессии.');
+    loadPlugins();
+  } catch(e) {
+    logEl.textContent = e.message;
+    showMsg(e.message, false);
+  } finally { btn.disabled = false; btn.textContent = 'Установить'; }
+}
+
+async function uninstallPlugin(name) {
+  if (!confirm(`Удалить плагин ${name}?`)) return;
+  try {
+    await api('POST', '/__gateway/api/admin/plugins/uninstall', { plugin: name });
+    showMsg('Плагин удалён. Перезапустите сессии.');
+    loadPlugins();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function togglePlugin(name, enable) {
+  try {
+    await api('POST', `/__gateway/api/admin/plugins/${enable ? 'enable' : 'disable'}`, { plugin: name });
+    showMsg(enable ? 'Плагин включён' : 'Плагин отключён');
+    loadPlugins();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+// ── Marketplaces ──────────────────────────────────────────────────────────────
+
+async function loadMarketplaces() {
+  const container = document.getElementById('marketplaces-list');
+  try {
+    const data = await api('GET', '/__gateway/api/admin/marketplaces');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет добавленных marketplace</div>';
+      return;
+    }
+    container.innerHTML = data.map(m => {
+      const src = m.source ? JSON.stringify(m.source).slice(0, 60) : '';
+      return `
+        <div class="plugin-row">
+          <div class="plugin-info">
+            <div class="plugin-name">${m.name || m.id || '?'}</div>
+            <div class="plugin-cmd">${src}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-red" onclick="removeMarketplace('${(m.name || m.id || '').replace(/'/g,'\\$&')}')">Удалить</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { container.innerHTML = `<div style="color:#f85149">${e.message}</div>`; }
+}
+
+async function addMarketplace() {
+  const source = document.getElementById('marketplace-source').value.trim();
+  if (!source) return showMsg('Укажите источник', false);
+  const btn = document.getElementById('marketplace-add-btn');
+  const logEl = document.getElementById('marketplace-add-log');
+  const outDiv = document.getElementById('marketplace-add-output');
+  btn.disabled = true; btn.textContent = 'Добавляю…';
+  outDiv.style.display = 'block'; logEl.textContent = '...';
+  try {
+    const data = await api('POST', '/__gateway/api/admin/marketplaces', { source });
+    logEl.textContent = data.output || 'OK';
+    showMsg('Marketplace добавлен');
+    loadMarketplaces();
+  } catch(e) {
+    logEl.textContent = e.message;
+    showMsg(e.message, false);
+  } finally { btn.disabled = false; btn.textContent = 'Добавить'; }
+}
+
+async function removeMarketplace(name) {
+  if (!confirm(`Удалить marketplace ${name}?`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/marketplaces/${name}`);
+    showMsg('Marketplace удалён');
+    loadMarketplaces();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+// ── MCP servers ──────────────────────────────────────────────────────────────
+
+let editingMcp = null;
+
+async function loadMcp() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/mcp');
+    const container = document.getElementById('mcp-list');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет MCP-серверов</div>';
+      return;
+    }
+    container.innerHTML = data.map(s => {
+      const cmdLine = s.type === 'sse'
+        ? 'SSE: ' + s.url
+        : [s.command, ...(s.args || [])].join(' ');
+      const disabledBadge = s.disabled ? '<span class="badge badge-disabled" style="margin-left:8px">disabled</span>' : '';
+      return `
+        <div class="plugin-row">
+          <div class="plugin-info">
+            <div class="plugin-name">${s.name}${disabledBadge}</div>
+            <div class="plugin-cmd">${cmdLine}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-blue" onclick="editMcp('${s.name}')">Изменить</button>
+            <button class="btn btn-red"  onclick="deleteMcp('${s.name}')">Удалить</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+function mcpTypeChange() {
+  const t = document.getElementById('mcp-type').value;
+  document.getElementById('mcp-stdio-fields').className = t === 'stdio' ? 'show' : '';
+  document.getElementById('mcp-sse-fields').className = t === 'sse' ? 'show' : '';
+}
+
+function makeKvRow(listId, k = '', v = '') {
+  const row = document.createElement('div');
+  row.className = 'kv-pair';
+  row.innerHTML = `<input type="text" placeholder="ключ" value="${k.replace(/"/g,'&quot;')}">
+    <input type="text" placeholder="значение" value="${v.replace(/"/g,'&quot;')}">
+    <button class="kv-rm" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById(listId).appendChild(row);
+}
+
+function addEnvRow()    { makeKvRow('mcp-env-list'); }
+function addHeaderRow() { makeKvRow('mcp-headers-list'); }
+
+function kvListToObj(listId) {
+  const obj = {};
+  document.getElementById(listId).querySelectorAll('.kv-pair').forEach(row => {
+    const [k, v] = row.querySelectorAll('input');
+    if (k.value.trim()) obj[k.value.trim()] = v.value;
+  });
+  return obj;
+}
+
+function openNewMcp() {
+  editingMcp = null;
+  document.getElementById('mcp-modal-title').textContent = 'Добавить MCP-сервер';
+  document.getElementById('mcp-name').value = '';
+  document.getElementById('mcp-name').disabled = false;
+  document.getElementById('mcp-type').value = 'stdio';
+  document.getElementById('mcp-command').value = 'npx';
+  document.getElementById('mcp-args').value = '';
+  document.getElementById('mcp-url').value = '';
+  document.getElementById('mcp-env-list').innerHTML = '';
+  document.getElementById('mcp-headers-list').innerHTML = '';
+  document.getElementById('mcp-disabled').checked = false;
+  mcpTypeChange();
+  openModal('modal-mcp');
+}
+
+async function editMcp(name) {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/mcp');
+    const s = data.find(x => x.name === name);
+    if (!s) return showMsg('Не найдено', false);
+    editingMcp = name;
+    document.getElementById('mcp-modal-title').textContent = 'Изменить: ' + name;
+    document.getElementById('mcp-name').value = name;
+    document.getElementById('mcp-name').disabled = true;
+    const isSSE = s.type === 'sse';
+    document.getElementById('mcp-type').value = isSSE ? 'sse' : 'stdio';
+    document.getElementById('mcp-command').value = s.command || '';
+    document.getElementById('mcp-args').value = (s.args || []).join('\n');
+    document.getElementById('mcp-url').value = s.url || '';
+    document.getElementById('mcp-disabled').checked = !!s.disabled;
+    document.getElementById('mcp-env-list').innerHTML = '';
+    Object.entries(s.env || {}).forEach(([k, v]) => makeKvRow('mcp-env-list', k, v));
+    document.getElementById('mcp-headers-list').innerHTML = '';
+    Object.entries(s.headers || {}).forEach(([k, v]) => makeKvRow('mcp-headers-list', k, v));
+    mcpTypeChange();
+    openModal('modal-mcp');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveMcp() {
+  const name = editingMcp || document.getElementById('mcp-name').value.trim();
+  if (!name) return showMsg('Укажите имя', false);
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return showMsg('Недопустимое имя', false);
+  const type = document.getElementById('mcp-type').value;
+  const disabled = document.getElementById('mcp-disabled').checked;
+  let body = { type, disabled };
+  if (type === 'sse') {
+    body.url = document.getElementById('mcp-url').value.trim();
+    body.headers = kvListToObj('mcp-headers-list');
+  } else {
+    body.command = document.getElementById('mcp-command').value.trim();
+    body.args = document.getElementById('mcp-args').value.split('\n').map(s => s.trim()).filter(Boolean);
+    body.env = kvListToObj('mcp-env-list');
+  }
+  try {
+    await api('PUT', `/__gateway/api/admin/mcp/${name}`, body);
+    showMsg(editingMcp ? 'MCP-сервер обновлён' : 'MCP-сервер добавлен');
+    closeModal('modal-mcp');
+    loadMcp();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function deleteMcp(name) {
+  if (!confirm(`Удалить MCP-сервер ${name}?`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/mcp/${name}`);
+    showMsg('MCP-сервер удалён');
+    loadMcp();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+// ── Agents ──────────────────────────────────────────────────────────────────
+
+let editingAgent = null; // null = new agent, string = existing name
+
+async function loadAgents() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/agents');
+    const container = document.getElementById('agents-list');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет глобальных агентов</div>';
+      return;
+    }
+    container.innerHTML = data.map(a => `
+      <div class="agent-row">
+        <span class="agent-name">${a.name}.md</span>
+        <div class="actions">
+          <button class="btn btn-blue" onclick="editAgent('${a.name}')">Редактировать</button>
+          <button class="btn btn-red" onclick="deleteAgent('${a.name}')">Удалить</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+function openNewAgent() {
+  editingAgent = null;
+  document.getElementById('agent-modal-title').textContent = 'Создать агента';
+  document.getElementById('agent-name').value = '';
+  document.getElementById('agent-name').disabled = false;
+  document.getElementById('agent-content').value = '---\nname: my-agent\ndescription: Краткое описание агента\n---\n\n# Инструкции\n\nОпишите задачи и поведение агента здесь.\n';
+  openModal('modal-agent');
+}
+
+async function editAgent(name) {
+  try {
+    const data = await api('GET', `/__gateway/api/admin/agents/${name}`);
+    editingAgent = name;
+    document.getElementById('agent-modal-title').textContent = `Редактировать: ${name}`;
+    document.getElementById('agent-name').value = name;
+    document.getElementById('agent-name').disabled = true;
+    document.getElementById('agent-content').value = data.content;
+    openModal('modal-agent');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveAgent() {
+  const name = editingAgent || document.getElementById('agent-name').value.trim();
+  const content = document.getElementById('agent-content').value;
+  if (!name) return showMsg('Укажите имя агента', false);
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return showMsg('Недопустимое имя агента', false);
+  try {
+    await api('PUT', `/__gateway/api/admin/agents/${name}`, { content });
+    showMsg(editingAgent ? 'Агент обновлён' : 'Агент создан');
+    closeModal('modal-agent');
+    loadAgents();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function deleteAgent(name) {
+  if (!confirm(`Удалить агента ${name}?`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/agents/${name}`);
+    showMsg('Агент удалён');
+    loadAgents();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+async function openSettings() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/settings');
+    document.getElementById('settings-content').value = data.content;
+    openModal('modal-settings');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveSettings() {
+  const content = document.getElementById('settings-content').value;
+  try {
+    await api('PUT', '/__gateway/api/admin/settings', { content });
+    showMsg('Настройки сохранены');
+    closeModal('modal-settings');
+  } catch(e) { showMsg(e.message, false); }
+}
+
 // Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', e => {
@@ -360,7 +936,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
-function refresh() { loadUsers(); loadSessions(); }
+function refresh() { loadUsers(); loadSessions(); loadPlugins(); loadMarketplaces(); loadAgents(); loadMcp(); }
 refresh();
 setInterval(loadSessions, 10000);
 </script>
