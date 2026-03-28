@@ -23,6 +23,12 @@ if [ ! -f /etc/claude/settings.json ]; then
   chmod 644 /etc/claude/settings.json
 fi
 
+# Seed default CLAUDE.md if the volume was mounted empty
+if [ ! -f /etc/claude/CLAUDE.md ]; then
+  cp /opt/defaults/claude/CLAUDE.md /etc/claude/CLAUDE.md
+  chmod 644 /etc/claude/CLAUDE.md
+fi
+
 # Ensure the official plugin marketplace is registered (idempotent, covers upgrades)
 node -e "
 const fs = require('fs');

@@ -307,6 +307,24 @@ app.put(GW + '/api/admin/settings', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Global CLAUDE.md API ──────────────────────────────────────────────────────
+
+const CLAUDE_MD_PATH = '/etc/claude/CLAUDE.md';
+
+app.get(GW + '/api/admin/claudemd', requireAdmin, (req, res) => {
+  try {
+    const content = fs.readFileSync(CLAUDE_MD_PATH, 'utf8');
+    res.json({ content });
+  } catch { res.json({ content: '' }); }
+});
+
+app.put(GW + '/api/admin/claudemd', requireAdmin, (req, res) => {
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
+  fs.writeFileSync(CLAUDE_MD_PATH, content, { mode: 0o644 });
+  res.json({ ok: true });
+});
+
 // ── Claude Code plugins API ───────────────────────────────────────────────────
 
 // The global "home" whose .claude → /etc/claude, so `claude plugin` commands
