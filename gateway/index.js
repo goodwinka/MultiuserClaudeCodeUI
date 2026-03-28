@@ -323,23 +323,32 @@ const CLAUDE_BIN = (() => {
   return 'claude'; // fallback: let execFile search PATH itself
 })();
 
-// npm prefix inside the mounted volume so plugin packages are persisted on
-// the host and survive container restarts.
-const CLAUDE_NPM_PREFIX = '/etc/claude/npm-global';
-
 function claudeCmd(args, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
+    // Include the system npm global lib in NODE_PATH so plugin build steps can
+    // find packages like @anthropic-ai/claude-code that are installed at the
+    // system npm prefix (e.g. /usr/local/lib/node_modules).
+    // NOTE: npm_config_prefix is intentionally NOT set here. Setting a custom
+    // prefix causes `npm run build` to fail (exit code 2) during plugin install
+    // because npm rewrites the PATH for lifecycle scripts to use the custom
+    // prefix's bin dir, making globally-installed build tools (tsc, etc.)
+    // invisible, and changes global node_modules resolution so peer dependencies
+    // at the system prefix are not found. Plugin persistence is handled via HOME
+    // (HOME/.claude symlinks to /etc/claude which is the mounted volume).
+    const sysNpmGlobal = '/usr/local/lib/node_modules';
+    const nodePath = process.env.NODE_PATH
+      ? `${sysNpmGlobal}:${process.env.NODE_PATH}`
+      : sysNpmGlobal;
     execFile(CLAUDE_BIN, args, {
       env: {
         ...process.env,
         HOME: CLAUDE_GLOBAL_HOME,
-        // Keep npm packages inside the volume mount so they appear on the host
-        npm_config_prefix: CLAUDE_NPM_PREFIX,
         npm_config_cache: '/etc/claude/npm-cache',
+        NODE_PATH: nodePath,
       },
       timeout: timeoutMs,
     }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(stderr || err.message));
+      if (err) return reject(new Error((stderr || stdout || err.message).trim()));
       resolve(stdout);
     });
   });
