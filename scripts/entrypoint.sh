@@ -4,13 +4,16 @@ set -e
 echo "==> Starting MultiUser ClaudeCodeUI"
 
 # ── Ensure data directories exist ─────────────────────────────────────────────
-mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude
+mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude /etc/claude/agents
 
 # Seed default Claude settings if the volume was mounted empty
 if [ ! -f /etc/claude/settings.json ]; then
   cp /opt/defaults/claude/settings.json /etc/claude/settings.json
   chmod 644 /etc/claude/settings.json
 fi
+
+# Ensure agents directory is world-readable
+chmod 755 /etc/claude/agents
 
 # ── Git system-wide configuration ─────────────────────────────────────────────
 echo "==> Configuring git"

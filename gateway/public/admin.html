@@ -99,6 +99,24 @@
     cursor: pointer; font-size: 0.85rem; background: transparent; color: #8b949e;
   }
   .btn-cancel:hover { background: #21262d; color: #e6edf3; }
+
+  /* Large editor modal */
+  .modal-lg { width: 680px; max-width: 95vw; }
+  .form-group textarea {
+    width: 100%; background: #0d1117; border: 1px solid #30363d;
+    border-radius: 6px; padding: 8px 10px; color: #e6edf3; font-size: 0.85rem;
+    outline: none; font-family: 'Courier New', monospace; resize: vertical;
+    min-height: 320px;
+  }
+  .form-group textarea:focus { border-color: #388bfd; }
+  .agents-list { display: flex; flex-direction: column; gap: 8px; }
+  .agent-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px 14px;
+  }
+  .agent-row .agent-name { font-weight: 600; color: #f0f6fc; font-size: 0.9rem; }
+  .agent-row .actions { display: flex; gap: 6px; }
 </style>
 </head>
 <body>
@@ -145,6 +163,39 @@
   </div>
 </div>
 
+<!-- Agent editor modal -->
+<div class="modal-overlay" id="modal-agent">
+  <div class="modal modal-lg">
+    <h3 id="agent-modal-title">Агент</h3>
+    <div class="form-group">
+      <label>Имя агента</label>
+      <input id="agent-name" type="text" placeholder="только a-z, A-Z, 0-9, _, -" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Содержимое (Markdown с YAML-фронтматтером)</label>
+      <textarea id="agent-content" placeholder="---&#10;name: my-agent&#10;description: Описание агента&#10;---&#10;&#10;# Инструкции агента&#10;"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-agent')">Отмена</button>
+      <button class="btn-primary" onclick="saveAgent()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings editor modal -->
+<div class="modal-overlay" id="modal-settings">
+  <div class="modal modal-lg">
+    <h3>Глобальные настройки Claude (settings.json)</h3>
+    <div class="form-group">
+      <textarea id="settings-content" style="min-height:400px"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-settings')">Отмена</button>
+      <button class="btn-primary" onclick="saveSettings()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <h1>Админ-панель — ClaudeCodeUI</h1>
   <div style="display:flex;gap:20px;align-items:center">
@@ -185,6 +236,28 @@
     </tr></thead>
     <tbody id="users-body"><tr><td colspan="7" style="color:#8b949e">Загрузка…</td></tr></tbody>
   </table>
+
+  <!-- Global agents -->
+  <h2>
+    <span>Глобальные агенты</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openNewAgent()">+ Создать агента</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Агенты доступны всем пользователям через <code style="color:#79c0ff">~/.claude/agents/</code> (символическая ссылка на <code style="color:#79c0ff">/etc/claude/agents/</code>).
+    Для использования в Claude Code: <code style="color:#79c0ff">/agents</code>.
+  </p>
+  <div id="agents-list" class="agents-list">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- Global settings -->
+  <h2>
+    <span>Настройки Claude (settings.json)</span>
+    <button class="btn btn-blue" style="font-size:0.75rem;padding:3px 10px" onclick="openSettings()">Редактировать</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Глобальный файл <code style="color:#79c0ff">/etc/claude/settings.json</code> — настройки MCP-серверов, разрешений и переменных окружения для всех пользователей.
+  </p>
 </main>
 
 <script>
@@ -353,6 +426,92 @@ async function logout() {
   location.href = '/__gateway/login';
 }
 
+// ── Agents ──────────────────────────────────────────────────────────────────
+
+let editingAgent = null; // null = new agent, string = existing name
+
+async function loadAgents() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/agents');
+    const container = document.getElementById('agents-list');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет глобальных агентов</div>';
+      return;
+    }
+    container.innerHTML = data.map(a => `
+      <div class="agent-row">
+        <span class="agent-name">${a.name}.md</span>
+        <div class="actions">
+          <button class="btn btn-blue" onclick="editAgent('${a.name}')">Редактировать</button>
+          <button class="btn btn-red" onclick="deleteAgent('${a.name}')">Удалить</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+function openNewAgent() {
+  editingAgent = null;
+  document.getElementById('agent-modal-title').textContent = 'Создать агента';
+  document.getElementById('agent-name').value = '';
+  document.getElementById('agent-name').disabled = false;
+  document.getElementById('agent-content').value = '---\nname: my-agent\ndescription: Краткое описание агента\n---\n\n# Инструкции\n\nОпишите задачи и поведение агента здесь.\n';
+  openModal('modal-agent');
+}
+
+async function editAgent(name) {
+  try {
+    const data = await api('GET', `/__gateway/api/admin/agents/${name}`);
+    editingAgent = name;
+    document.getElementById('agent-modal-title').textContent = `Редактировать: ${name}`;
+    document.getElementById('agent-name').value = name;
+    document.getElementById('agent-name').disabled = true;
+    document.getElementById('agent-content').value = data.content;
+    openModal('modal-agent');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveAgent() {
+  const name = editingAgent || document.getElementById('agent-name').value.trim();
+  const content = document.getElementById('agent-content').value;
+  if (!name) return showMsg('Укажите имя агента', false);
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return showMsg('Недопустимое имя агента', false);
+  try {
+    await api('PUT', `/__gateway/api/admin/agents/${name}`, { content });
+    showMsg(editingAgent ? 'Агент обновлён' : 'Агент создан');
+    closeModal('modal-agent');
+    loadAgents();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function deleteAgent(name) {
+  if (!confirm(`Удалить агента ${name}?`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/agents/${name}`);
+    showMsg('Агент удалён');
+    loadAgents();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+async function openSettings() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/settings');
+    document.getElementById('settings-content').value = data.content;
+    openModal('modal-settings');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveSettings() {
+  const content = document.getElementById('settings-content').value;
+  try {
+    await api('PUT', '/__gateway/api/admin/settings', { content });
+    showMsg('Настройки сохранены');
+    closeModal('modal-settings');
+  } catch(e) { showMsg(e.message, false); }
+}
+
 // Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', e => {
@@ -360,7 +519,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
-function refresh() { loadUsers(); loadSessions(); }
+function refresh() { loadUsers(); loadSessions(); loadAgents(); }
 refresh();
 setInterval(loadSessions, 10000);
 </script>

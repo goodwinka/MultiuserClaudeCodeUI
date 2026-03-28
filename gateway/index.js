@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const httpProxy = require('http-proxy');
 const path = require('path');
+const fs = require('fs');
 
 const db = require('./db');
 const pm = require('./processManager');
@@ -194,6 +195,63 @@ app.patch(GW + '/api/admin/users/:id/password', requireAdmin, (req, res) => {
   if (password.length < 6)
     return res.status(400).json({ error: 'Пароль слишком короткий (мин. 6 символов)' });
   db.updatePassword(req.params.id, bcrypt.hashSync(password, 10));
+  res.json({ ok: true });
+});
+
+// ── Global agents API ─────────────────────────────────────────────────────────
+
+const AGENTS_DIR = '/etc/claude/agents';
+const AGENT_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+app.get(GW + '/api/admin/agents', requireAdmin, (req, res) => {
+  try {
+    const files = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.md'));
+    res.json(files.map(f => ({ name: f.slice(0, -3) })));
+  } catch { res.json([]); }
+});
+
+app.get(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    const content = fs.readFileSync(path.join(AGENTS_DIR, name + '.md'), 'utf8');
+    res.json({ name, content });
+  } catch { res.status(404).json({ error: 'Not found' }); }
+});
+
+app.put(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
+  fs.mkdirSync(AGENTS_DIR, { recursive: true });
+  fs.writeFileSync(path.join(AGENTS_DIR, name + '.md'), content, { mode: 0o644 });
+  res.json({ ok: true });
+});
+
+app.delete(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    fs.unlinkSync(path.join(AGENTS_DIR, name + '.md'));
+    res.json({ ok: true });
+  } catch { res.status(404).json({ error: 'Not found' }); }
+});
+
+// ── Global settings API ───────────────────────────────────────────────────────
+
+app.get(GW + '/api/admin/settings', requireAdmin, (req, res) => {
+  try {
+    const content = fs.readFileSync('/etc/claude/settings.json', 'utf8');
+    res.json({ content });
+  } catch { res.json({ content: '{}' }); }
+});
+
+app.put(GW + '/api/admin/settings', requireAdmin, (req, res) => {
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
+  try { JSON.parse(content); } catch { return res.status(400).json({ error: 'Некорректный JSON' }); }
+  fs.writeFileSync('/etc/claude/settings.json', content, { mode: 0o644 });
   res.json({ ok: true });
 });
 
