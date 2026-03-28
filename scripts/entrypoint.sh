@@ -14,7 +14,7 @@ fi
 
 # ── Ensure data directories exist ─────────────────────────────────────────────
 mkdir -p /data/users /var/lib/multiuser-ccui/logs \
-         /etc/claude /etc/claude/agents /etc/claude/plugins \
+         /etc/claude /etc/claude/agents /etc/claude/skills /etc/claude/plugins \
          /etc/claude/npm-global /etc/claude/npm-cache
 
 # Seed default Claude settings if the volume was mounted empty
@@ -41,7 +41,7 @@ try {
 " 2>&1 || true
 
 # Ensure shared directories are world-readable/executable
-chmod 755 /etc/claude/agents /etc/claude/plugins
+chmod 755 /etc/claude/agents /etc/claude/skills /etc/claude/plugins
 
 # Set up a global "home" for managing plugins as root.
 # claude plugin install uses HOME/.claude as the config dir, so by symlinking

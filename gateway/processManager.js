@@ -113,6 +113,16 @@ function setupUserDir(username, uid) {
     } catch {}
   }
 
+  // Symlink global skills directory (read-only for user processes)
+  const skillsLink = path.join(claudeDir, 'skills');
+  const skillsIsSymlink = (() => { try { return fs.lstatSync(skillsLink).isSymbolicLink(); } catch { return false; } })();
+  if (!skillsIsSymlink) {
+    try {
+      if (fs.existsSync(skillsLink)) fs.rmSync(skillsLink, { recursive: true, force: true });
+      fs.symlinkSync('/etc/claude/skills', skillsLink);
+    } catch {}
+  }
+
   // Symlink global plugins directory (read-only for user processes).
   // Use lstat to distinguish a real symlink from a plain directory that
   // Claude Code may have created during an earlier session.
