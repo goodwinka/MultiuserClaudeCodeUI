@@ -492,7 +492,7 @@ app.use(async (req, res) => {
   }
 
   try {
-    const port = await pm.getOrStart(user.username, user.uid);
+    const port = await pm.getOrStart(user.username, user.role === 'admin' ? 0 : user.uid);
     proxy.web(req, res, { target: `http://127.0.0.1:${port}` });
   } catch (err) {
     console.error(`[gw] proxy error for ${user.username}:`, err.message);
@@ -538,7 +538,7 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   try {
-    const port = await pm.getOrStart(user.username, user.uid);
+    const port = await pm.getOrStart(user.username, user.role === 'admin' ? 0 : user.uid);
     proxy.ws(req, socket, head, { target: `ws://127.0.0.1:${port}` });
   } catch (err) {
     socket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
@@ -555,7 +555,7 @@ const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin123';
 if (!db.findByUsername('admin')) {
   const uid = db.nextUid();
   db.createUser('admin', bcrypt.hashSync(ADMIN_PASS, 10), 'admin', uid);
-  pm.setupUserDir('admin', uid);
+  pm.setupUserDir('admin', 0);
   console.log(`[gw] Admin account created (password: ${ADMIN_PASS})`);
 }
 
