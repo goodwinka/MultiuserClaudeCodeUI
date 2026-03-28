@@ -3,29 +3,13 @@ set -e
 
 echo "==> Starting MultiUser ClaudeCodeUI"
 
-# ── Host-installed tools (language servers, Qt5, …) ───────────────────────────
-# When /opt/host/usr/bin is bind-mounted from the host (see docker-compose.yml)
-# prepend the host paths to PATH and LD_LIBRARY_PATH so that clangd, pyright,
-# pylsp, bash-language-server, cmake-language-server, vscode-*-language-server,
-# kotlin-language-server, qmake, etc. are found inside the container.
-if [ -d /opt/host/usr/local/bin ]; then
-  export PATH="/opt/host/usr/local/bin:/opt/host/usr/bin:${PATH}"
-fi
-if [ -d /opt/host/usr/lib ]; then
-  export LD_LIBRARY_PATH="/opt/host/usr/lib:/opt/host/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
-fi
-# Qt5 pkg-config / cmake find_package support
-if [ -d /opt/host/usr/lib/x86_64-linux-gnu/pkgconfig ]; then
-  export PKG_CONFIG_PATH="/opt/host/usr/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-fi
-if [ -d /opt/host/usr/lib/x86_64-linux-gnu/cmake ]; then
-  export CMAKE_PREFIX_PATH="/opt/host/usr/lib/x86_64-linux-gnu/cmake:${CMAKE_PREFIX_PATH:-}"
-fi
-# CUDA Toolkit (nvcc, headers, libcuda, libcudart …)
-if [ -d /opt/host/usr/local/cuda ]; then
-  export CUDA_HOME=/opt/host/usr/local/cuda
-  export PATH="${CUDA_HOME}/bin:${PATH}"
-  export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/lib64/stubs:${LD_LIBRARY_PATH:-}"
+# ── CUDA Toolkit (host-mounted at /usr/local/cuda) ────────────────────────────
+# All other tools (language servers, Qt5) are installed in the image.
+# CUDA is the only host mount because its size makes it impractical to bake in.
+if [ -d /usr/local/cuda ]; then
+  export CUDA_HOME=/usr/local/cuda
+  export PATH="${PATH}:/usr/local/cuda/bin"
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs"
 fi
 
 # ── Ensure data directories exist ─────────────────────────────────────────────
