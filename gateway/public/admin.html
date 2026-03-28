@@ -128,6 +128,13 @@
   .kv-rm { padding: 5px 8px; border-radius: 4px; border: 1px solid #f8514966; color: #f85149; background: none; cursor: pointer; font-size: 0.75rem; flex-shrink: 0; }
   #mcp-stdio-fields, #mcp-sse-fields { display: none; }
   #mcp-stdio-fields.show, #mcp-sse-fields.show { display: block; }
+  .badge-enabled  { background: #23863622; color: #56d364; border: 1px solid #23863655; }
+  .badge-pending  { background: #d2992222; color: #d29922; border: 1px solid #d2992255; }
+  pre.output-box {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px; font-size: 0.78rem; color: #8b949e; max-height: 160px;
+    overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin-top: 8px;
+  }
 </style>
 </head>
 <body>
@@ -170,6 +177,48 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal('modal-password')">Отмена</button>
       <button class="btn-primary" onclick="submitPassword()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Plugin install modal -->
+<div class="modal-overlay" id="modal-plugin-install">
+  <div class="modal">
+    <h3>Установить плагин</h3>
+    <div class="form-group">
+      <label>Идентификатор плагина</label>
+      <input id="plugin-install-name" type="text" placeholder="plugin-name или plugin@marketplace" autocomplete="off">
+      <div style="font-size:0.75rem;color:#8b949e;margin-top:4px">
+        Формат: <code style="color:#79c0ff">plugin-name</code> или <code style="color:#79c0ff">plugin-name@marketplace-id</code>
+      </div>
+    </div>
+    <div id="plugin-install-output" style="display:none">
+      <pre class="output-box" id="plugin-install-log"></pre>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-plugin-install')">Закрыть</button>
+      <button class="btn-primary" id="plugin-install-btn" onclick="installPlugin()">Установить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Marketplace add modal -->
+<div class="modal-overlay" id="modal-marketplace-add">
+  <div class="modal">
+    <h3>Добавить marketplace</h3>
+    <div class="form-group">
+      <label>Источник</label>
+      <input id="marketplace-source" type="text" placeholder="https://github.com/owner/repo" autocomplete="off">
+      <div style="font-size:0.75rem;color:#8b949e;margin-top:4px">
+        GitHub repo, git URL (.git), npm-пакет или локальный путь к marketplace.json
+      </div>
+    </div>
+    <div id="marketplace-add-output" style="display:none">
+      <pre class="output-box" id="marketplace-add-log"></pre>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-marketplace-add')">Закрыть</button>
+      <button class="btn-primary" id="marketplace-add-btn" onclick="addMarketplace()">Добавить</button>
     </div>
   </div>
 </div>
@@ -305,6 +354,34 @@
     </tr></thead>
     <tbody id="users-body"><tr><td colspan="7" style="color:#8b949e">Загрузка…</td></tr></tbody>
   </table>
+
+  <!-- Claude Code plugins -->
+  <h2>
+    <span>Плагины Claude Code</span>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-green" style="font-size:0.75rem;padding:3px 10px" onclick="loadPlugins()">Обновить</button>
+      <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openModal('modal-plugin-install')">+ Установить</button>
+    </div>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Устанавливаются через <code style="color:#79c0ff">claude plugin install</code>. Хранятся в <code style="color:#79c0ff">/etc/claude/plugins/</code> — доступны всем пользователям.
+    После установки/удаления нужно перезапустить сессии.
+  </p>
+  <div id="plugins-list" class="plugin-list" style="margin-bottom:8px">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- Marketplaces -->
+  <h2>
+    <span>Marketplaces</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openModal('modal-marketplace-add')">+ Добавить</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Источники плагинов. После добавления marketplace становятся доступны плагины из него.
+  </p>
+  <div id="marketplaces-list" class="plugin-list" style="margin-bottom:8px">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
 
   <!-- MCP servers (plugins) -->
   <h2>
@@ -506,6 +583,133 @@ async function submitPassword() {
 async function logout() {
   await fetch('/__gateway/auth/logout', { method: 'POST' });
   location.href = '/__gateway/login';
+}
+
+// ── Plugins ───────────────────────────────────────────────────────────────────
+
+async function loadPlugins() {
+  const container = document.getElementById('plugins-list');
+  try {
+    const data = await api('GET', '/__gateway/api/admin/plugins');
+    const installed = data.installed || [];
+    if (!installed.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет установленных плагинов</div>';
+      return;
+    }
+    container.innerHTML = installed.map(p => {
+      const name = p.plugin || p.name || '?';
+      const desc = (p.manifest?.description || p.description || '').slice(0, 80);
+      const ver = p.version ? `<span style="color:#8b949e;font-size:0.75rem"> v${p.version}</span>` : '';
+      const enabled = p.isEnabled !== false;
+      const pendingBadge = (p.pendingEnable || p.pendingToggle || p.pendingUpdate) ? '<span class="badge badge-pending" style="margin-left:6px">restart</span>' : '';
+      const statusBadge = enabled
+        ? `<span class="badge badge-enabled">включён</span>`
+        : `<span class="badge badge-blocked">отключён</span>`;
+      return `
+        <div class="plugin-row">
+          <div class="plugin-info">
+            <div class="plugin-name">${name}${ver}${pendingBadge} ${statusBadge}</div>
+            ${desc ? `<div class="plugin-cmd">${desc}</div>` : ''}
+          </div>
+          <div class="actions">
+            ${enabled
+              ? `<button class="btn btn-yellow" onclick="togglePlugin('${name}', false)">Откл.</button>`
+              : `<button class="btn btn-green" onclick="togglePlugin('${name}', true)">Вкл.</button>`}
+            <button class="btn btn-red" onclick="uninstallPlugin('${name}')">Удалить</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { container.innerHTML = `<div style="color:#f85149">${e.message}</div>`; }
+}
+
+async function installPlugin() {
+  const name = document.getElementById('plugin-install-name').value.trim();
+  if (!name) return showMsg('Укажите имя плагина', false);
+  const btn = document.getElementById('plugin-install-btn');
+  const logEl = document.getElementById('plugin-install-log');
+  const outDiv = document.getElementById('plugin-install-output');
+  btn.disabled = true; btn.textContent = 'Устанавливаю…';
+  outDiv.style.display = 'block'; logEl.textContent = '...';
+  try {
+    const data = await api('POST', '/__gateway/api/admin/plugins/install', { plugin: name });
+    logEl.textContent = data.output || 'OK';
+    showMsg('Плагин установлен. Перезапустите сессии.');
+    loadPlugins();
+  } catch(e) {
+    logEl.textContent = e.message;
+    showMsg(e.message, false);
+  } finally { btn.disabled = false; btn.textContent = 'Установить'; }
+}
+
+async function uninstallPlugin(name) {
+  if (!confirm(`Удалить плагин ${name}?`)) return;
+  try {
+    await api('POST', '/__gateway/api/admin/plugins/uninstall', { plugin: name });
+    showMsg('Плагин удалён. Перезапустите сессии.');
+    loadPlugins();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function togglePlugin(name, enable) {
+  try {
+    await api('POST', `/__gateway/api/admin/plugins/${enable ? 'enable' : 'disable'}`, { plugin: name });
+    showMsg(enable ? 'Плагин включён' : 'Плагин отключён');
+    loadPlugins();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+// ── Marketplaces ──────────────────────────────────────────────────────────────
+
+async function loadMarketplaces() {
+  const container = document.getElementById('marketplaces-list');
+  try {
+    const data = await api('GET', '/__gateway/api/admin/marketplaces');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет добавленных marketplace</div>';
+      return;
+    }
+    container.innerHTML = data.map(m => {
+      const src = m.source ? JSON.stringify(m.source).slice(0, 60) : '';
+      return `
+        <div class="plugin-row">
+          <div class="plugin-info">
+            <div class="plugin-name">${m.name || m.id || '?'}</div>
+            <div class="plugin-cmd">${src}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-red" onclick="removeMarketplace('${(m.name || m.id || '').replace(/'/g,'\\$&')}')">Удалить</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { container.innerHTML = `<div style="color:#f85149">${e.message}</div>`; }
+}
+
+async function addMarketplace() {
+  const source = document.getElementById('marketplace-source').value.trim();
+  if (!source) return showMsg('Укажите источник', false);
+  const btn = document.getElementById('marketplace-add-btn');
+  const logEl = document.getElementById('marketplace-add-log');
+  const outDiv = document.getElementById('marketplace-add-output');
+  btn.disabled = true; btn.textContent = 'Добавляю…';
+  outDiv.style.display = 'block'; logEl.textContent = '...';
+  try {
+    const data = await api('POST', '/__gateway/api/admin/marketplaces', { source });
+    logEl.textContent = data.output || 'OK';
+    showMsg('Marketplace добавлен');
+    loadMarketplaces();
+  } catch(e) {
+    logEl.textContent = e.message;
+    showMsg(e.message, false);
+  } finally { btn.disabled = false; btn.textContent = 'Добавить'; }
+}
+
+async function removeMarketplace(name) {
+  if (!confirm(`Удалить marketplace ${name}?`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/marketplaces/${name}`);
+    showMsg('Marketplace удалён');
+    loadMarketplaces();
+  } catch(e) { showMsg(e.message, false); }
 }
 
 // ── MCP servers ──────────────────────────────────────────────────────────────
@@ -732,7 +936,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
-function refresh() { loadUsers(); loadSessions(); loadAgents(); loadMcp(); }
+function refresh() { loadUsers(); loadSessions(); loadPlugins(); loadMarketplaces(); loadAgents(); loadMcp(); }
 refresh();
 setInterval(loadSessions, 10000);
 </script>

@@ -10,6 +10,8 @@ const httpProxy = require('http-proxy');
 const path = require('path');
 const fs = require('fs');
 
+const { execFile } = require('child_process');
+
 const db = require('./db');
 const pm = require('./processManager');
 
@@ -263,6 +265,99 @@ app.put(GW + '/api/admin/settings', requireAdmin, (req, res) => {
   try { JSON.parse(content); } catch { return res.status(400).json({ error: 'Некорректный JSON' }); }
   fs.writeFileSync(SETTINGS_PATH, content, { mode: 0o644 });
   res.json({ ok: true });
+});
+
+// ── Claude Code plugins API ───────────────────────────────────────────────────
+
+// The global "home" whose .claude → /etc/claude, so `claude plugin` commands
+// write/read from the shared /etc/claude/plugins directory.
+const CLAUDE_GLOBAL_HOME = '/var/lib/claude-global';
+const CLAUDE_BIN = '/opt/node22/bin/claude';
+
+function claudeCmd(args, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    execFile(CLAUDE_BIN, args, {
+      env: { ...process.env, HOME: CLAUDE_GLOBAL_HOME },
+      timeout: timeoutMs,
+    }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout);
+    });
+  });
+}
+
+app.get(GW + '/api/admin/plugins', requireAdmin, async (req, res) => {
+  try {
+    const out = await claudeCmd(['plugin', 'list', '--json']);
+    res.json(JSON.parse(out || '{"installed":[],"available":[]}'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/install', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'install', plugin, '--scope', 'user'], 180000);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/uninstall', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'uninstall', plugin]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/enable', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'enable', plugin]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/plugins/disable', requireAdmin, async (req, res) => {
+  const { plugin } = req.body;
+  if (!plugin || typeof plugin !== 'string' || !/^[a-zA-Z0-9@._/-]+$/.test(plugin))
+    return res.status(400).json({ error: 'Invalid plugin name' });
+  try {
+    const out = await claudeCmd(['plugin', 'disable', plugin]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Marketplace API ───────────────────────────────────────────────────────────
+
+app.get(GW + '/api/admin/marketplaces', requireAdmin, async (req, res) => {
+  try {
+    const out = await claudeCmd(['plugin', 'marketplace', 'list', '--json']);
+    res.json(JSON.parse(out || '[]'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post(GW + '/api/admin/marketplaces', requireAdmin, async (req, res) => {
+  const { source } = req.body;
+  if (!source || typeof source !== 'string') return res.status(400).json({ error: 'source required' });
+  try {
+    const out = await claudeCmd(['plugin', 'marketplace', 'add', source, '--scope', 'user'], 180000);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete(GW + '/api/admin/marketplaces/:name', requireAdmin, async (req, res) => {
+  const { name } = req.params;
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  try {
+    const out = await claudeCmd(['plugin', 'marketplace', 'remove', name]);
+    res.json({ ok: true, output: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── MCP servers (plugins) API ─────────────────────────────────────────────────

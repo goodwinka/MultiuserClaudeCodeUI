@@ -4,7 +4,7 @@ set -e
 echo "==> Starting MultiUser ClaudeCodeUI"
 
 # ── Ensure data directories exist ─────────────────────────────────────────────
-mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude /etc/claude/agents
+mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude /etc/claude/agents /etc/claude/plugins
 
 # Seed default Claude settings if the volume was mounted empty
 if [ ! -f /etc/claude/settings.json ]; then
@@ -12,8 +12,17 @@ if [ ! -f /etc/claude/settings.json ]; then
   chmod 644 /etc/claude/settings.json
 fi
 
-# Ensure agents directory is world-readable
-chmod 755 /etc/claude/agents
+# Ensure shared directories are world-readable/executable
+chmod 755 /etc/claude/agents /etc/claude/plugins
+
+# Set up a global "home" for managing plugins as root.
+# claude plugin install uses HOME/.claude as the config dir, so by symlinking
+# /var/lib/claude-global/.claude → /etc/claude, any plugin install goes straight
+# into /etc/claude/plugins/ which is shared with all users.
+mkdir -p /var/lib/claude-global
+if [ ! -e /var/lib/claude-global/.claude ]; then
+  ln -s /etc/claude /var/lib/claude-global/.claude
+fi
 
 # ── Git system-wide configuration ─────────────────────────────────────────────
 echo "==> Configuring git"
