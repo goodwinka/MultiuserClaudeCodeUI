@@ -13,11 +13,17 @@ ARG NO_PROXY=""
 ARG no_proxy=""
 # Optional PEM-encoded CA certificate to trust (e.g. for TLS-intercepting proxies)
 # ── System packages ────────────────────────────────────────────────────────────
+# Language servers (clangd, pyright, pylsp, bash-language-server,
+# cmake-language-server, vscode-css/html/json, kotlin-language-server)
+# and Qt5 are NOT installed in the image — they are supplied at runtime
+# by bind-mounting host paths (see docker-compose.yml).
+# Only the minimal runtime libraries that those tools depend on are included.
 RUN apt-get update && apt-get install -y \
-    curl wget git sudo procps \
-    gcc g++ clang clangd cmake make build-essential \
+    curl wget git sudo procps unzip \
+    gcc g++ clang cmake make build-essential \
     python3 python3-pip python3-venv \
     sqlite3 nginx \
+    default-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Optional extra CA cert (for TLS-intercepting proxies) ─────────────────────
