@@ -28,6 +28,8 @@ services:
       - /usr/lib:/opt/host/usr/lib:ro
       # Qt5 / system headers (needed when compiling Qt projects inside container)
       - /usr/include:/opt/host/usr/include:ro
+      # CUDA Toolkit — nvcc, headers, libraries (comment out if not available)
+      - /usr/local/cuda:/opt/host/usr/local/cuda:ro
     environment:
       # Initial admin password (change after first login)
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
@@ -46,7 +48,16 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      # NVIDIA — expose all GPUs; override via .env if needed
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     restart: unless-stopped
+    # NVIDIA GPU access — requires nvidia-container-toolkit on the host:
+    #   sudo apt install nvidia-container-toolkit
+    #   sudo nvidia-ctk runtime configure --runtime=docker
+    #   sudo systemctl restart docker
+    # Comment out this line if the host has no GPU.
+    runtime: nvidia
     # Needed to spawn processes with different UIDs for user isolation
     cap_add:
       - SETUID

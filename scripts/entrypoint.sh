@@ -21,6 +21,12 @@ fi
 if [ -d /opt/host/usr/lib/x86_64-linux-gnu/cmake ]; then
   export CMAKE_PREFIX_PATH="/opt/host/usr/lib/x86_64-linux-gnu/cmake:${CMAKE_PREFIX_PATH:-}"
 fi
+# CUDA Toolkit (nvcc, headers, libcuda, libcudart …)
+if [ -d /opt/host/usr/local/cuda ]; then
+  export CUDA_HOME=/opt/host/usr/local/cuda
+  export PATH="${CUDA_HOME}/bin:${PATH}"
+  export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/lib64/stubs:${LD_LIBRARY_PATH:-}"
+fi
 
 # ── Ensure data directories exist ─────────────────────────────────────────────
 mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude /etc/claude/agents /etc/claude/plugins

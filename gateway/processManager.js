@@ -170,6 +170,9 @@ async function startProcess(username, uid) {
                      (process.env.PKG_CONFIG_PATH || ''),
     CMAKE_PREFIX_PATH: '/opt/host/usr/lib/x86_64-linux-gnu/cmake:' +
                        (process.env.CMAKE_PREFIX_PATH || ''),
+    // CUDA_HOME is set by entrypoint.sh when /opt/host/usr/local/cuda is mounted;
+    // PATH and LD_LIBRARY_PATH already include CUDA paths via process.env above.
+    ...(process.env.CUDA_HOME && { CUDA_HOME: process.env.CUDA_HOME }),
     NODE_ENV: 'production',
     // Local LLM config (inherited from gateway env)
     ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '',
