@@ -18,8 +18,10 @@ const GW = '/__gateway';          // gateway-specific route prefix
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Scope body parsing to gateway routes only — applying it globally would consume
+// the request stream before http-proxy can forward POST bodies to ClaudeCodeUI.
+app.use(GW, express.json());
+app.use(GW, express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Static assets for gateway pages (no external CDN)
