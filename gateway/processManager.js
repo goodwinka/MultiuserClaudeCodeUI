@@ -186,6 +186,14 @@ async function startProcess(username, uid) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
   const logStream = fs.createWriteStream(path.join(LOG_DIR, `${username}.log`), { flags: 'a' });
 
+  // Include the system npm global lib in NODE_PATH so plugin build steps can
+  // find packages like @anthropic-ai/claude-code that are installed at the
+  // system npm prefix (/usr/local/lib/node_modules).
+  const sysNpmGlobal = '/usr/local/lib/node_modules';
+  const nodePath = process.env.NODE_PATH
+    ? `${sysNpmGlobal}:${process.env.NODE_PATH}`
+    : sysNpmGlobal;
+
   const env = {
     HOME: `/data/users/${username}`,
     SERVER_PORT: String(port),
@@ -197,6 +205,8 @@ async function startProcess(username, uid) {
     // /etc/claude/npm-global/bin — plugin binaries installed via admin panel.
     PATH: '/etc/claude/npm-global/bin:' +
           (process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'),
+    // Allow plugin build steps (npm run build) to resolve global node modules.
+    NODE_PATH: nodePath,
     ...(process.env.LD_LIBRARY_PATH && { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH }),
     ...(process.env.CUDA_HOME && { CUDA_HOME: process.env.CUDA_HOME }),
     NODE_ENV: 'production',
