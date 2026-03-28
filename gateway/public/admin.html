@@ -319,6 +319,20 @@
   </div>
 </div>
 
+<!-- CLAUDE.md editor modal -->
+<div class="modal-overlay" id="modal-claudemd">
+  <div class="modal modal-lg">
+    <h3>Глобальные инструкции Claude (CLAUDE.md)</h3>
+    <div class="form-group">
+      <textarea id="claudemd-content" style="min-height:400px"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-claudemd')">Отмена</button>
+      <button class="btn-primary" onclick="saveClaudeMd()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings editor modal -->
 <div class="modal-overlay" id="modal-settings">
   <div class="modal modal-lg">
@@ -448,6 +462,15 @@
   </h2>
   <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
     Глобальный файл <code style="color:#79c0ff">/etc/claude/settings.json</code> — настройки MCP-серверов, разрешений и переменных окружения для всех пользователей.
+  </p>
+
+  <!-- Global CLAUDE.md -->
+  <h2>
+    <span>Инструкции Claude (CLAUDE.md)</span>
+    <button class="btn btn-blue" style="font-size:0.75rem;padding:3px 10px" onclick="openClaudeMd()">Редактировать</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Глобальный файл <code style="color:#79c0ff">/etc/claude/CLAUDE.md</code> — общие инструкции, правила и контекст для Claude Code. Доступен всем пользователям как <code style="color:#79c0ff">~/.claude/CLAUDE.md</code>.
   </p>
 </main>
 
@@ -1010,6 +1033,25 @@ async function deleteSkill(name) {
     await api('DELETE', `/__gateway/api/admin/skills/${name}`);
     showMsg('Скилл удалён');
     loadSkills();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+// ── CLAUDE.md ────────────────────────────────────────────────────────────────
+
+async function openClaudeMd() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/claudemd');
+    document.getElementById('claudemd-content').value = data.content;
+    openModal('modal-claudemd');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveClaudeMd() {
+  const content = document.getElementById('claudemd-content').value;
+  try {
+    await api('PUT', '/__gateway/api/admin/claudemd', { content });
+    showMsg('CLAUDE.md сохранён');
+    closeModal('modal-claudemd');
   } catch(e) { showMsg(e.message, false); }
 }
 

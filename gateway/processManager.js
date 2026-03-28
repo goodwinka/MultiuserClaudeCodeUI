@@ -103,6 +103,16 @@ function setupUserDir(username, uid) {
     } catch {}
   }
 
+  // Symlink global CLAUDE.md (read-only for user processes)
+  const claudeMdLink = path.join(claudeDir, 'CLAUDE.md');
+  const claudeMdIsSymlink = (() => { try { return fs.lstatSync(claudeMdLink).isSymbolicLink(); } catch { return false; } })();
+  if (!claudeMdIsSymlink) {
+    try {
+      if (fs.existsSync(claudeMdLink)) fs.rmSync(claudeMdLink, { force: true });
+      fs.symlinkSync('/etc/claude/CLAUDE.md', claudeMdLink);
+    } catch {}
+  }
+
   // Symlink global agents directory (read-only for user processes)
   const agentsLink = path.join(claudeDir, 'agents');
   const agentsIsSymlink = (() => { try { return fs.lstatSync(agentsLink).isSymbolicLink(); } catch { return false; } })();
