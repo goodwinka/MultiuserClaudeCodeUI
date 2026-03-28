@@ -40,7 +40,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN npm install -g \
     pyright \
     bash-language-server \
-    vscode-langservers-extracted
+    vscode-langservers-extracted \
+    typescript
 
 # ── pip-based language servers ─────────────────────────────────────────────────
 RUN pip install --break-system-packages \
