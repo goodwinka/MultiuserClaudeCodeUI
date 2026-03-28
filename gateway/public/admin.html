@@ -109,14 +109,25 @@
     min-height: 320px;
   }
   .form-group textarea:focus { border-color: #388bfd; }
-  .agents-list { display: flex; flex-direction: column; gap: 8px; }
-  .agent-row {
+  .plugin-list, .agents-list { display: flex; flex-direction: column; gap: 8px; }
+  .plugin-row, .agent-row {
     display: flex; align-items: center; justify-content: space-between;
     background: #161b22; border: 1px solid #30363d; border-radius: 6px;
     padding: 10px 14px;
   }
+  .plugin-row .plugin-info { flex: 1; min-width: 0; }
+  .plugin-row .plugin-name { font-weight: 600; color: #f0f6fc; font-size: 0.9rem; }
+  .plugin-row .plugin-cmd  { font-size: 0.75rem; color: #8b949e; margin-top: 2px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plugin-row .actions, .agent-row .actions { display: flex; gap: 6px; flex-shrink: 0; margin-left: 12px; }
   .agent-row .agent-name { font-weight: 600; color: #f0f6fc; font-size: 0.9rem; }
-  .agent-row .actions { display: flex; gap: 6px; }
+  .badge-disabled { background: #30363d44; color: #8b949e; border: 1px solid #30363d; }
+  .kv-pair { display: flex; gap: 6px; margin-bottom: 6px; }
+  .kv-pair input { flex: 1; }
+  .kv-add { font-size: 0.78rem; color: #79c0ff; background: none; border: none; cursor: pointer; padding: 2px 0; }
+  .kv-add:hover { text-decoration: underline; }
+  .kv-rm { padding: 5px 8px; border-radius: 4px; border: 1px solid #f8514966; color: #f85149; background: none; cursor: pointer; font-size: 0.75rem; flex-shrink: 0; }
+  #mcp-stdio-fields, #mcp-sse-fields { display: none; }
+  #mcp-stdio-fields.show, #mcp-sse-fields.show { display: block; }
 </style>
 </head>
 <body>
@@ -159,6 +170,64 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal('modal-password')">Отмена</button>
       <button class="btn-primary" onclick="submitPassword()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MCP server modal -->
+<div class="modal-overlay" id="modal-mcp">
+  <div class="modal modal-lg">
+    <h3 id="mcp-modal-title">MCP-сервер</h3>
+    <div class="form-group">
+      <label>Имя (идентификатор)</label>
+      <input id="mcp-name" type="text" placeholder="только a-z, A-Z, 0-9, _, -" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Тип</label>
+      <select id="mcp-type" onchange="mcpTypeChange()">
+        <option value="stdio">stdio — команда (npx, node, python…)</option>
+        <option value="sse">sse — HTTP/SSE endpoint (URL)</option>
+      </select>
+    </div>
+
+    <div id="mcp-stdio-fields">
+      <div class="form-group">
+        <label>Команда</label>
+        <input id="mcp-command" type="text" placeholder="npx">
+      </div>
+      <div class="form-group">
+        <label>Аргументы (по одному на строку)</label>
+        <textarea id="mcp-args" style="min-height:80px" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/data"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Переменные окружения</label>
+        <div id="mcp-env-list"></div>
+        <button class="kv-add" onclick="addEnvRow()">+ Добавить переменную</button>
+      </div>
+    </div>
+
+    <div id="mcp-sse-fields">
+      <div class="form-group">
+        <label>URL</label>
+        <input id="mcp-url" type="text" placeholder="http://localhost:3000/sse">
+      </div>
+      <div class="form-group">
+        <label>HTTP-заголовки</label>
+        <div id="mcp-headers-list"></div>
+        <button class="kv-add" onclick="addHeaderRow()">+ Добавить заголовок</button>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:6px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="mcp-disabled" type="checkbox" style="width:auto">
+        Отключён (disabled)
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-mcp')">Отмена</button>
+      <button class="btn-primary" onclick="saveMcp()">Сохранить</button>
     </div>
   </div>
 </div>
@@ -236,6 +305,19 @@
     </tr></thead>
     <tbody id="users-body"><tr><td colspan="7" style="color:#8b949e">Загрузка…</td></tr></tbody>
   </table>
+
+  <!-- MCP servers (plugins) -->
+  <h2>
+    <span>MCP-серверы (плагины)</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openNewMcp()">+ Добавить плагин</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    MCP-серверы глобально доступны всем пользователям через <code style="color:#79c0ff">settings.json → mcpServers</code>.
+    После добавления перезапустите сессии пользователей.
+  </p>
+  <div id="mcp-list" class="plugin-list">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
 
   <!-- Global agents -->
   <h2>
@@ -426,6 +508,137 @@ async function logout() {
   location.href = '/__gateway/login';
 }
 
+// ── MCP servers ──────────────────────────────────────────────────────────────
+
+let editingMcp = null;
+
+async function loadMcp() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/mcp');
+    const container = document.getElementById('mcp-list');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет MCP-серверов</div>';
+      return;
+    }
+    container.innerHTML = data.map(s => {
+      const cmdLine = s.type === 'sse'
+        ? 'SSE: ' + s.url
+        : [s.command, ...(s.args || [])].join(' ');
+      const disabledBadge = s.disabled ? '<span class="badge badge-disabled" style="margin-left:8px">disabled</span>' : '';
+      return `
+        <div class="plugin-row">
+          <div class="plugin-info">
+            <div class="plugin-name">${s.name}${disabledBadge}</div>
+            <div class="plugin-cmd">${cmdLine}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-blue" onclick="editMcp('${s.name}')">Изменить</button>
+            <button class="btn btn-red"  onclick="deleteMcp('${s.name}')">Удалить</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+function mcpTypeChange() {
+  const t = document.getElementById('mcp-type').value;
+  document.getElementById('mcp-stdio-fields').className = t === 'stdio' ? 'show' : '';
+  document.getElementById('mcp-sse-fields').className = t === 'sse' ? 'show' : '';
+}
+
+function makeKvRow(listId, k = '', v = '') {
+  const row = document.createElement('div');
+  row.className = 'kv-pair';
+  row.innerHTML = `<input type="text" placeholder="ключ" value="${k.replace(/"/g,'&quot;')}">
+    <input type="text" placeholder="значение" value="${v.replace(/"/g,'&quot;')}">
+    <button class="kv-rm" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById(listId).appendChild(row);
+}
+
+function addEnvRow()    { makeKvRow('mcp-env-list'); }
+function addHeaderRow() { makeKvRow('mcp-headers-list'); }
+
+function kvListToObj(listId) {
+  const obj = {};
+  document.getElementById(listId).querySelectorAll('.kv-pair').forEach(row => {
+    const [k, v] = row.querySelectorAll('input');
+    if (k.value.trim()) obj[k.value.trim()] = v.value;
+  });
+  return obj;
+}
+
+function openNewMcp() {
+  editingMcp = null;
+  document.getElementById('mcp-modal-title').textContent = 'Добавить MCP-сервер';
+  document.getElementById('mcp-name').value = '';
+  document.getElementById('mcp-name').disabled = false;
+  document.getElementById('mcp-type').value = 'stdio';
+  document.getElementById('mcp-command').value = 'npx';
+  document.getElementById('mcp-args').value = '';
+  document.getElementById('mcp-url').value = '';
+  document.getElementById('mcp-env-list').innerHTML = '';
+  document.getElementById('mcp-headers-list').innerHTML = '';
+  document.getElementById('mcp-disabled').checked = false;
+  mcpTypeChange();
+  openModal('modal-mcp');
+}
+
+async function editMcp(name) {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/mcp');
+    const s = data.find(x => x.name === name);
+    if (!s) return showMsg('Не найдено', false);
+    editingMcp = name;
+    document.getElementById('mcp-modal-title').textContent = 'Изменить: ' + name;
+    document.getElementById('mcp-name').value = name;
+    document.getElementById('mcp-name').disabled = true;
+    const isSSE = s.type === 'sse';
+    document.getElementById('mcp-type').value = isSSE ? 'sse' : 'stdio';
+    document.getElementById('mcp-command').value = s.command || '';
+    document.getElementById('mcp-args').value = (s.args || []).join('\n');
+    document.getElementById('mcp-url').value = s.url || '';
+    document.getElementById('mcp-disabled').checked = !!s.disabled;
+    document.getElementById('mcp-env-list').innerHTML = '';
+    Object.entries(s.env || {}).forEach(([k, v]) => makeKvRow('mcp-env-list', k, v));
+    document.getElementById('mcp-headers-list').innerHTML = '';
+    Object.entries(s.headers || {}).forEach(([k, v]) => makeKvRow('mcp-headers-list', k, v));
+    mcpTypeChange();
+    openModal('modal-mcp');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveMcp() {
+  const name = editingMcp || document.getElementById('mcp-name').value.trim();
+  if (!name) return showMsg('Укажите имя', false);
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return showMsg('Недопустимое имя', false);
+  const type = document.getElementById('mcp-type').value;
+  const disabled = document.getElementById('mcp-disabled').checked;
+  let body = { type, disabled };
+  if (type === 'sse') {
+    body.url = document.getElementById('mcp-url').value.trim();
+    body.headers = kvListToObj('mcp-headers-list');
+  } else {
+    body.command = document.getElementById('mcp-command').value.trim();
+    body.args = document.getElementById('mcp-args').value.split('\n').map(s => s.trim()).filter(Boolean);
+    body.env = kvListToObj('mcp-env-list');
+  }
+  try {
+    await api('PUT', `/__gateway/api/admin/mcp/${name}`, body);
+    showMsg(editingMcp ? 'MCP-сервер обновлён' : 'MCP-сервер добавлен');
+    closeModal('modal-mcp');
+    loadMcp();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function deleteMcp(name) {
+  if (!confirm(`Удалить MCP-сервер ${name}?`)) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/mcp/${name}`);
+    showMsg('MCP-сервер удалён');
+    loadMcp();
+  } catch(e) { showMsg(e.message, false); }
+}
+
 // ── Agents ──────────────────────────────────────────────────────────────────
 
 let editingAgent = null; // null = new agent, string = existing name
@@ -519,7 +732,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
-function refresh() { loadUsers(); loadSessions(); loadAgents(); }
+function refresh() { loadUsers(); loadSessions(); loadAgents(); loadMcp(); }
 refresh();
 setInterval(loadSessions, 10000);
 </script>

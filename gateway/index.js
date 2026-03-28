@@ -240,9 +240,19 @@ app.delete(GW + '/api/admin/agents/:name', requireAdmin, (req, res) => {
 
 // ── Global settings API ───────────────────────────────────────────────────────
 
+const SETTINGS_PATH = '/etc/claude/settings.json';
+
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')); } catch { return {}; }
+}
+
+function writeSettings(obj) {
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(obj, null, 2) + '\n', { mode: 0o644 });
+}
+
 app.get(GW + '/api/admin/settings', requireAdmin, (req, res) => {
   try {
-    const content = fs.readFileSync('/etc/claude/settings.json', 'utf8');
+    const content = fs.readFileSync(SETTINGS_PATH, 'utf8');
     res.json({ content });
   } catch { res.json({ content: '{}' }); }
 });
@@ -251,7 +261,51 @@ app.put(GW + '/api/admin/settings', requireAdmin, (req, res) => {
   const { content } = req.body;
   if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
   try { JSON.parse(content); } catch { return res.status(400).json({ error: 'Некорректный JSON' }); }
-  fs.writeFileSync('/etc/claude/settings.json', content, { mode: 0o644 });
+  fs.writeFileSync(SETTINGS_PATH, content, { mode: 0o644 });
+  res.json({ ok: true });
+});
+
+// ── MCP servers (plugins) API ─────────────────────────────────────────────────
+
+const MCP_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+app.get(GW + '/api/admin/mcp', requireAdmin, (req, res) => {
+  const settings = readSettings();
+  const servers = settings.mcpServers || {};
+  res.json(Object.entries(servers).map(([name, cfg]) => ({ name, ...cfg })));
+});
+
+app.put(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!MCP_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  const { type, command, args, env, url, headers, disabled } = req.body;
+  let cfg;
+  if (type === 'sse') {
+    if (!url) return res.status(400).json({ error: 'URL required for SSE server' });
+    cfg = { type: 'sse', url };
+    if (headers && Object.keys(headers).length) cfg.headers = headers;
+  } else {
+    if (!command) return res.status(400).json({ error: 'Command required' });
+    cfg = { command };
+    if (Array.isArray(args) && args.length) cfg.args = args;
+    if (env && Object.keys(env).length) cfg.env = env;
+  }
+  if (disabled) cfg.disabled = true;
+  const settings = readSettings();
+  settings.mcpServers = settings.mcpServers || {};
+  settings.mcpServers[name] = cfg;
+  writeSettings(settings);
+  res.json({ ok: true });
+});
+
+app.delete(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
+  const { name } = req.params;
+  if (!MCP_NAME_RE.test(name)) return res.status(400).json({ error: 'Invalid name' });
+  const settings = readSettings();
+  if (!settings.mcpServers || !settings.mcpServers[name])
+    return res.status(404).json({ error: 'Not found' });
+  delete settings.mcpServers[name];
+  writeSettings(settings);
   res.json({ ok: true });
 });
 
