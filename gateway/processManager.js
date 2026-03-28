@@ -158,21 +158,12 @@ async function startProcess(username, uid) {
     HOST: '127.0.0.1',
     VITE_IS_PLATFORM: 'true',           // bypass claudecodeui's own auth
     WORKSPACES_ROOT: `/data/users/${username}/projects`,
-    // Prepend host-mounted tool directories so that language servers
-    // (clangd, pyright, pylsp, bash-language-server, cmake-language-server,
-    //  vscode-*-language-server, kotlin-language-server, qmake …) installed
-    // on the host are found inside the container (see docker-compose.yml).
-    // /etc/claude/npm-global/bin — plugin binaries installed by `claude plugin install`
-    PATH: '/etc/claude/npm-global/bin:/opt/host/usr/local/bin:/opt/host/usr/bin:' +
+    // Language servers and Qt5 are installed in the image — process.env.PATH
+    // already contains all needed dirs (set by entrypoint.sh).
+    // /etc/claude/npm-global/bin — plugin binaries installed via admin panel.
+    PATH: '/etc/claude/npm-global/bin:' +
           (process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'),
-    LD_LIBRARY_PATH: '/opt/host/usr/lib:/opt/host/usr/lib/x86_64-linux-gnu:' +
-                     (process.env.LD_LIBRARY_PATH || ''),
-    PKG_CONFIG_PATH: '/opt/host/usr/lib/x86_64-linux-gnu/pkgconfig:' +
-                     (process.env.PKG_CONFIG_PATH || ''),
-    CMAKE_PREFIX_PATH: '/opt/host/usr/lib/x86_64-linux-gnu/cmake:' +
-                       (process.env.CMAKE_PREFIX_PATH || ''),
-    // CUDA_HOME is set by entrypoint.sh when /opt/host/usr/local/cuda is mounted;
-    // PATH and LD_LIBRARY_PATH already include CUDA paths via process.env above.
+    ...(process.env.LD_LIBRARY_PATH && { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH }),
     ...(process.env.CUDA_HOME && { CUDA_HOME: process.env.CUDA_HOME }),
     NODE_ENV: 'production',
     // Local LLM config (inherited from gateway env)

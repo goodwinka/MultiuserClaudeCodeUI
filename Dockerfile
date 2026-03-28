@@ -13,18 +13,35 @@ ARG NO_PROXY=""
 ARG no_proxy=""
 # Optional PEM-encoded CA certificate to trust (e.g. for TLS-intercepting proxies)
 # ── System packages ────────────────────────────────────────────────────────────
-# Language servers (clangd, pyright, pylsp, bash-language-server,
-# cmake-language-server, vscode-css/html/json, kotlin-language-server)
-# and Qt5 are NOT installed in the image — they are supplied at runtime
-# by bind-mounting host paths (see docker-compose.yml).
-# Only the minimal runtime libraries that those tools depend on are included.
 RUN apt-get update && apt-get install -y \
     curl wget git sudo procps unzip \
-    gcc g++ clang cmake make build-essential \
+    gcc g++ clang clangd cmake make build-essential \
     python3 python3-pip python3-venv \
     sqlite3 nginx \
     default-jre-headless \
+    qtbase5-dev qt5-qmake qttools5-dev-tools \
     && rm -rf /var/lib/apt/lists/*
+
+# ── npm-based language servers ─────────────────────────────────────────────────
+RUN npm install -g \
+    pyright \
+    bash-language-server \
+    vscode-langservers-extracted
+
+# ── pip-based language servers ─────────────────────────────────────────────────
+RUN pip install --break-system-packages \
+    python-lsp-server \
+    cmake-language-server
+
+# ── Kotlin language server ─────────────────────────────────────────────────────
+ARG KOTLIN_LS_VERSION=1.3.11
+RUN curl -fsSL \
+      "https://github.com/fwcd/kotlin-language-server/releases/download/${KOTLIN_LS_VERSION}/server.zip" \
+      -o /tmp/kotlin-ls.zip \
+    && unzip /tmp/kotlin-ls.zip -d /opt/kotlin-language-server \
+    && ln -s /opt/kotlin-language-server/server/bin/kotlin-language-server \
+             /usr/local/bin/kotlin-language-server \
+    && rm /tmp/kotlin-ls.zip
 
 # ── Optional extra CA cert (for TLS-intercepting proxies) ─────────────────────
 ARG EXTRA_CA_CERT=""
