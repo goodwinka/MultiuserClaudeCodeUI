@@ -12,6 +12,8 @@ services:
       - ${DATA_DIR:-./data}/db:/var/lib/multiuser-ccui
       # Global Claude Code settings — edit on host to configure local LLM
       - ${DATA_DIR:-./data}/claude-config:/etc/claude
+      # Global Claude Code UI plugins — shared across all users
+      - ${DATA_DIR:-./data}/claude-code-ui-config:/etc/claude-code-ui
       # ── CUDA Toolkit (read-only, host mount) ────────────────────────────────
       # All language servers and Qt5 are installed inside the image (Dockerfile).
       # Only CUDA is mounted from the host because it is too large (~3-5 GB) to
