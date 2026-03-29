@@ -145,6 +145,18 @@ function setupUserDir(username, uid) {
     } catch {}
   }
 
+  // Symlink global .claude-code-ui/plugins directory (shared across all users).
+  const codeUiDir = path.join(home, '.claude-code-ui');
+  fs.mkdirSync(codeUiDir, { recursive: true });
+  const codeUiPluginsLink = path.join(codeUiDir, 'plugins');
+  const codeUiPluginsIsSymlink = (() => { try { return fs.lstatSync(codeUiPluginsLink).isSymbolicLink(); } catch { return false; } })();
+  if (!codeUiPluginsIsSymlink) {
+    try {
+      if (fs.existsSync(codeUiPluginsLink)) fs.rmSync(codeUiPluginsLink, { recursive: true, force: true });
+      fs.symlinkSync('/etc/claude-code-ui/plugins', codeUiPluginsLink);
+    } catch {}
+  }
+
   // Create per-user .gitconfig so git works out of the box
   const gitconfigPath = path.join(home, '.gitconfig');
   if (!fs.existsSync(gitconfigPath)) {
@@ -166,6 +178,7 @@ function setupUserDir(username, uid) {
     fs.chownSync(home, uid, uid);
     fs.chownSync(claudeDir, uid, uid);
     fs.chownSync(projectsDir, uid, uid);
+    fs.chownSync(codeUiDir, uid, uid);
     // The symlink target (/etc/claude/settings.json) stays root-owned (644)
     if (fs.existsSync(gitconfigPath)) fs.chownSync(gitconfigPath, uid, uid);
   } catch (e) {
