@@ -67,6 +67,34 @@ RUN git clone https://github.com/siteboon/claudecodeui.git . \
     && npm install \
     && VITE_IS_PLATFORM=true npm run build
 
+# ── xterm ESM bundles (offline CDN replacement for esm.sh) ───────────────────
+# Pre-bundle xterm packages so the terminal plugin works without internet access.
+# The gateway rewrites https://esm.sh/ → /__esm/ in proxied JS/HTML responses,
+# and serves these files at that path.
+RUN mkdir -p /tmp/xterm-build \
+    && cd /tmp/xterm-build \
+    && npm init -y \
+    && npm install --save-exact \
+         @xterm/xterm@5.5.0 \
+         @xterm/addon-fit@0.10.0 \
+         @xterm/addon-web-links@0.11.0 \
+         @xterm/addon-search@0.15.0 \
+    && npm install --save-dev esbuild \
+    && mkdir -p /opt/esm-bundles/@xterm \
+    && printf 'export * from "@xterm/xterm";\n'          > entry.mjs \
+    && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
+         --outfile=/opt/esm-bundles/@xterm/xterm@5.5.0 \
+    && printf 'export * from "@xterm/addon-fit";\n'      > entry.mjs \
+    && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
+         --outfile=/opt/esm-bundles/@xterm/addon-fit@0.10.0 \
+    && printf 'export * from "@xterm/addon-web-links";\n' > entry.mjs \
+    && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
+         --outfile=/opt/esm-bundles/@xterm/addon-web-links@0.11.0 \
+    && printf 'export * from "@xterm/addon-search";\n'   > entry.mjs \
+    && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
+         --outfile=/opt/esm-bundles/@xterm/addon-search@0.15.0 \
+    && cd / && rm -rf /tmp/xterm-build
+
 # ── Gateway dependencies ───────────────────────────────────────────────────────
 WORKDIR /opt/gateway
 COPY gateway/package.json ./

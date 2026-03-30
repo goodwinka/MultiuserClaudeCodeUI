@@ -30,6 +30,17 @@ app.use(cookieParser());
 // Static assets for gateway pages (no external CDN)
 app.use(GW + '/static', express.static(path.join(__dirname, 'public')));
 
+// Local ESM bundles — offline CDN replacement for esm.sh.
+// The proxyRes handler rewrites https://esm.sh/ → /__esm/ in all proxied
+// JS/HTML responses, so the browser fetches these local files instead.
+app.use('/__esm', express.static('/opt/esm-bundles', {
+  setHeaders(res) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+}));
+
 // ── JWT helpers ───────────────────────────────────────────────────────────────
 
 function signToken(payload) {
@@ -585,33 +596,44 @@ proxy.on('proxyReq', (proxyReq) => {
 
 proxy.on('proxyRes', (proxyRes, req, res) => {
   const contentType = proxyRes.headers['content-type'] || '';
+  const isHtml = contentType.includes('text/html');
+  const isJs   = contentType.includes('application/javascript') ||
+                 contentType.includes('text/javascript');
 
-  if (!contentType.includes('text/html')) {
-    // Non-HTML: pipe through unchanged
+  if (!isHtml && !isJs) {
+    // Non-text: pipe through unchanged
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(res);
     return;
   }
 
-  // Buffer HTML response and inject logout bar script
+  // Buffer text response for logout-bar injection and esm.sh URL rewriting
   const chunks = [];
   proxyRes.on('data', (chunk) => chunks.push(chunk));
   proxyRes.on('end', () => {
-    let html = Buffer.concat(chunks).toString('utf8');
+    let text = Buffer.concat(chunks).toString('utf8');
 
-    if (html.includes('</body>')) {
-      html = html.replace('</body>', LOGOUT_SCRIPT_TAG + '</body>');
-    } else {
-      html += LOGOUT_SCRIPT_TAG;
+    if (isHtml) {
+      if (text.includes('</body>')) {
+        text = text.replace('</body>', LOGOUT_SCRIPT_TAG + '</body>');
+      } else {
+        text += LOGOUT_SCRIPT_TAG;
+      }
+    }
+
+    // Rewrite esm.sh CDN imports to locally-bundled copies so the terminal
+    // plugin works without internet access (see /__esm/ route and Dockerfile).
+    if (text.includes('https://esm.sh/')) {
+      text = text.replace(/https:\/\/esm\.sh\//g, '/__esm/');
     }
 
     const headers = Object.assign({}, proxyRes.headers);
     delete headers['content-length'];
     delete headers['transfer-encoding'];
-    headers['content-length'] = Buffer.byteLength(html);
+    headers['content-length'] = Buffer.byteLength(text);
 
     res.writeHead(proxyRes.statusCode, headers);
-    res.end(html);
+    res.end(text);
   });
 });
 
