@@ -82,9 +82,55 @@ function waitForPort(port, timeoutMs = 30000) {
   });
 }
 
+// ── System user entries (/etc/passwd, /etc/group) ────────────────────────────
+// Non-admin user processes run as dynamically allocated UIDs (10000+) that have
+// no entries in /etc/passwd.  When the ClaudeCodeUI terminal plugin spawns a
+// login shell for such a UID, bash calls getpwuid() to resolve HOME.  Without a
+// passwd entry the lookup fails and HOME may be reset to '/' or left undefined,
+// so `claude` cannot find ~/.claude/settings.json and never reads the env
+// section (ANTHROPIC_BASE_URL, etc.) from it.
+// Admin users run as uid=0 (root) which always has a passwd entry → works fine.
+
+function ensureSystemUser(username, uid) {
+  if (uid === 0) return; // root already exists in /etc/passwd
+  const home = `/data/users/${username}`;
+  const passwdEntry = `${username}:x:${uid}:${uid}::${home}:/bin/bash\n`;
+  const groupEntry  = `${username}:x:${uid}:\n`;
+
+  for (const [file, entry] of [['/etc/passwd', passwdEntry], ['/etc/group', groupEntry]]) {
+    try {
+      const content = fs.readFileSync(file, 'utf8');
+      const alreadyPresent = content.split('\n').some(line => {
+        const parts = line.split(':');
+        return parts[0] === username || (parts[2] !== undefined && parts[2] === String(uid));
+      });
+      if (!alreadyPresent) fs.appendFileSync(file, entry);
+    } catch (e) {
+      console.warn(`[pm] ${file} update warning for ${username}:`, e.message);
+    }
+  }
+}
+
+function removeSystemUser(username) {
+  if (!username) return;
+  for (const file of ['/etc/passwd', '/etc/group', '/etc/shadow']) {
+    try {
+      const content = fs.readFileSync(file, 'utf8');
+      const filtered = content.split('\n')
+        .filter(line => !line.startsWith(username + ':'))
+        .join('\n');
+      fs.writeFileSync(file, filtered);
+    } catch { /* file may not exist or be unwritable – safe to skip */ }
+  }
+}
+
 // ── Setup user home directory ─────────────────────────────────────────────────
 
 function setupUserDir(username, uid) {
+  // Ensure the OS user database knows about this uid so that bash login shells
+  // (spawned by the ClaudeCodeUI terminal plugin) can resolve HOME correctly.
+  ensureSystemUser(username, uid);
+
   const home = `/data/users/${username}`;
   const claudeDir = path.join(home, '.claude');
   const projectsDir = path.join(home, 'projects');
@@ -223,9 +269,11 @@ async function startProcess(username, uid) {
     ...(process.env.LD_LIBRARY_PATH && { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH }),
     ...(process.env.CUDA_HOME && { CUDA_HOME: process.env.CUDA_HOME }),
     NODE_ENV: 'production',
-    // Local LLM config (inherited from gateway env)
-    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '',
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+    // Local LLM config (inherited from gateway env).
+    // Only set when actually configured — an empty string would shadow the
+    // value in ~/.claude/settings.json env section and break non-admin shells.
+    ...(process.env.ANTHROPIC_BASE_URL && { ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL }),
+    ...(process.env.ANTHROPIC_API_KEY  && { ANTHROPIC_API_KEY:  process.env.ANTHROPIC_API_KEY  }),
     // Git proxy (lowercase variants are used by curl/git/npm)
     ...(process.env.GIT_PROXY_URL && {
       http_proxy: process.env.GIT_PROXY_URL,
@@ -315,6 +363,7 @@ function killUser(username) {
 }
 
 function deleteUserDir(username) {
+  removeSystemUser(username);
   const home = `/data/users/${username}`;
   try {
     fs.rmSync(home, { recursive: true, force: true });
