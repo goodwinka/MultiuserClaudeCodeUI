@@ -20,6 +20,16 @@ RUN apt-get update && apt-get install -y \
     sqlite3 nginx \
     default-jre-headless \
     qtbase5-dev qt5-qmake qttools5-dev-tools \
+    # ── Testing tools: C / C++ ─────────────────────────────────────────────────
+    libgtest-dev libgmock-dev \
+    libcppunit-dev \
+    check \
+    valgrind \
+    lcov gcovr \
+    # ── Testing tools: Qt ──────────────────────────────────────────────────────
+    libqt5test5 \
+    # ── Testing tools: Python ──────────────────────────────────────────────────
+    python3-pytest python3-coverage \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Optional extra CA cert (for TLS-intercepting proxies) ─────────────────────
@@ -47,6 +57,21 @@ RUN npm install -g \
 RUN pip install --break-system-packages \
     python-lsp-server \
     cmake-language-server
+
+# ── pip-based testing tools ────────────────────────────────────────────────────
+RUN pip install --break-system-packages \
+    pytest \
+    pytest-cov \
+    pytest-xdist \
+    coverage \
+    unittest-xml-reporting
+
+# ── Build Google Test shared libraries ────────────────────────────────────────
+RUN cd /usr/src/googletest \
+    && cmake . -DBUILD_SHARED_LIBS=ON \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig
 
 # ── Kotlin language server ─────────────────────────────────────────────────────
 ARG KOTLIN_LS_VERSION=1.3.11

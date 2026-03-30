@@ -155,6 +155,73 @@ sudo systemctl restart docker
 
 ---
 
+## Инструменты тестирования
+
+В образ встроены инструменты для тестирования кода на C, C++, Qt и Python.
+
+### C / C++
+
+| Инструмент | Пакет | Назначение |
+|---|---|---|
+| **Google Test / Mock** | `libgtest-dev`, `libgmock-dev` | Юнит-тесты и моки для C++ |
+| **CppUnit** | `libcppunit-dev` | Альтернативный фреймворк C++ (JUnit-style) |
+| **Check** | `check` | Юнит-тесты для чистого C |
+| **Valgrind** | `valgrind` | Анализ утечек памяти и ошибок |
+| **lcov / gcovr** | `lcov`, `gcovr` | Отчёты покрытия кода (gcov) |
+
+Google Test собирается как shared library (`libgtest.so`, `libgmock.so`) и установлен в `/usr/local/lib`.
+
+Пример сборки и запуска тестов на C++:
+
+```bash
+# CMakeLists.txt — подключить GTest:
+# find_package(GTest REQUIRED)
+# target_link_libraries(my_tests GTest::gtest_main GTest::gmock)
+
+cmake -B build && cmake --build build
+./build/my_tests
+
+# Покрытие:
+cmake -B build -DCMAKE_CXX_FLAGS="--coverage"
+cmake --build build && ./build/my_tests
+gcovr --html-details coverage.html
+```
+
+### Qt (QTest)
+
+| Инструмент | Пакет | Назначение |
+|---|---|---|
+| **QTest** | `qtbase5-dev` + `libqt5test5` | Встроенный фреймворк Qt для юнит-тестов |
+
+```bash
+# В .pro-файле добавить:
+# QT += testlib
+# CONFIG += testcase
+
+qmake && make
+./my_qt_tests
+```
+
+### Python
+
+| Инструмент | Назначение |
+|---|---|
+| **pytest** | Основной фреймворк тестирования |
+| **pytest-cov** | Покрытие кода внутри pytest |
+| **pytest-xdist** | Параллельный запуск тестов (`-n auto`) |
+| **coverage** | Детальные отчёты покрытия |
+| **unittest-xml-reporting** | XML-отчёты (JUnit) для CI |
+
+```bash
+pytest                          # запустить все тесты
+pytest -v                       # с подробным выводом
+pytest --cov=src --cov-report=html   # с отчётом покрытия
+pytest -n auto                  # параллельный запуск
+python -m coverage run -m pytest && python -m coverage report
+```
+
+---
+
 ## Git
 
 Локальный git доступен внутри контейнера без дополнительной настройки.
