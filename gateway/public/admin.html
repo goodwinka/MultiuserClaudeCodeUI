@@ -319,6 +319,39 @@
   </div>
 </div>
 
+<!-- Notification editor modal -->
+<div class="modal-overlay" id="modal-notification">
+  <div class="modal">
+    <h3 id="notif-modal-title">Уведомление</h3>
+    <div class="form-group">
+      <label>Заголовок</label>
+      <input id="notif-title" type="text" placeholder="Краткий заголовок" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Сообщение</label>
+      <textarea id="notif-message" style="min-height:100px;font-family:inherit" placeholder="Текст уведомления для пользователей"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Тип</label>
+      <select id="notif-type">
+        <option value="info">info — информационное</option>
+        <option value="warning">warning — предупреждение</option>
+        <option value="error">error — ошибка/важное</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="notif-active" type="checkbox" style="width:auto" checked>
+        Активно (показывать пользователям)
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-notification')">Отмена</button>
+      <button class="btn-primary" onclick="saveNotification()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- CLAUDE.md editor modal -->
 <div class="modal-overlay" id="modal-claudemd">
   <div class="modal modal-lg">
@@ -452,6 +485,18 @@
     Для использования в Claude Code: <code style="color:#79c0ff">/skill-name</code>.
   </p>
   <div id="skills-list" class="agents-list">
+    <div style="color:#8b949e">Загрузка…</div>
+  </div>
+
+  <!-- Notifications -->
+  <h2>
+    <span>Уведомления</span>
+    <button class="btn-primary" style="font-size:0.75rem;padding:4px 12px" onclick="openNewNotification()">+ Создать</button>
+  </h2>
+  <p style="color:#8b949e;font-size:0.8rem;margin-bottom:12px">
+    Уведомления отображаются всем пользователям в нижней панели (кнопка 🔔). Активные уведомления видны сразу после входа.
+  </p>
+  <div id="notifications-list" class="agents-list" style="margin-bottom:8px">
     <div style="color:#8b949e">Загрузка…</div>
   </div>
 
@@ -1036,6 +1081,109 @@ async function deleteSkill(name) {
   } catch(e) { showMsg(e.message, false); }
 }
 
+// ── Notifications ────────────────────────────────────────────────────────────
+
+let editingNotifId = null;
+
+const NOTIF_TYPE_LABELS = { info: 'info', warning: 'warning', error: 'error' };
+const NOTIF_TYPE_COLORS = { info: '#79c0ff', warning: '#d29922', error: '#f85149' };
+
+async function loadNotifications() {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/notifications');
+    const container = document.getElementById('notifications-list');
+    if (!data.length) {
+      container.innerHTML = '<div style="color:#8b949e;padding:10px 0">Нет уведомлений</div>';
+      return;
+    }
+    container.innerHTML = data.map(n => {
+      const color = NOTIF_TYPE_COLORS[n.type] || '#79c0ff';
+      const activeLabel = n.active
+        ? '<span class="badge badge-active">активно</span>'
+        : '<span class="badge badge-blocked">скрыто</span>';
+      const date = n.createdAt ? n.createdAt.slice(0, 16).replace('T', ' ') : '';
+      const msgPreview = (n.message || '').slice(0, 80);
+      return `
+        <div class="agent-row">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:#f0f6fc;font-size:0.9rem">
+              <span style="color:${color};margin-right:6px">[${n.type}]</span>${n.title}
+              <span style="margin-left:8px">${activeLabel}</span>
+            </div>
+            ${msgPreview ? `<div style="font-size:0.75rem;color:#8b949e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${msgPreview}</div>` : ''}
+            ${date ? `<div style="font-size:0.72rem;color:#6e7681;margin-top:2px">${date}</div>` : ''}
+          </div>
+          <div class="actions" style="flex-shrink:0;margin-left:12px">
+            <button class="btn btn-blue" onclick="editNotification(${n.id})">Изменить</button>
+            <button class="btn btn-${n.active ? 'yellow' : 'green'}" onclick="toggleNotification(${n.id}, ${!n.active})">${n.active ? 'Скрыть' : 'Показать'}</button>
+            <button class="btn btn-red" onclick="deleteNotification(${n.id})">Удалить</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+function openNewNotification() {
+  editingNotifId = null;
+  document.getElementById('notif-modal-title').textContent = 'Создать уведомление';
+  document.getElementById('notif-title').value = '';
+  document.getElementById('notif-message').value = '';
+  document.getElementById('notif-type').value = 'info';
+  document.getElementById('notif-active').checked = true;
+  openModal('modal-notification');
+}
+
+async function editNotification(id) {
+  try {
+    const data = await api('GET', '/__gateway/api/admin/notifications');
+    const n = data.find(x => x.id === id);
+    if (!n) return showMsg('Не найдено', false);
+    editingNotifId = id;
+    document.getElementById('notif-modal-title').textContent = 'Редактировать уведомление';
+    document.getElementById('notif-title').value = n.title;
+    document.getElementById('notif-message').value = n.message || '';
+    document.getElementById('notif-type').value = n.type || 'info';
+    document.getElementById('notif-active').checked = !!n.active;
+    openModal('modal-notification');
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function saveNotification() {
+  const title = document.getElementById('notif-title').value.trim();
+  const message = document.getElementById('notif-message').value.trim();
+  const type = document.getElementById('notif-type').value;
+  const active = document.getElementById('notif-active').checked;
+  if (!title) return showMsg('Укажите заголовок', false);
+  try {
+    if (editingNotifId) {
+      await api('PUT', `/__gateway/api/admin/notifications/${editingNotifId}`, { title, message, type, active });
+      showMsg('Уведомление обновлено');
+    } else {
+      await api('POST', '/__gateway/api/admin/notifications', { title, message, type, active });
+      showMsg('Уведомление создано');
+    }
+    closeModal('modal-notification');
+    loadNotifications();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function toggleNotification(id, active) {
+  try {
+    await api('PUT', `/__gateway/api/admin/notifications/${id}`, { active });
+    showMsg(active ? 'Уведомление показано' : 'Уведомление скрыто');
+    loadNotifications();
+  } catch(e) { showMsg(e.message, false); }
+}
+
+async function deleteNotification(id) {
+  if (!confirm('Удалить уведомление?')) return;
+  try {
+    await api('DELETE', `/__gateway/api/admin/notifications/${id}`);
+    showMsg('Уведомление удалено');
+    loadNotifications();
+  } catch(e) { showMsg(e.message, false); }
+}
+
 // ── CLAUDE.md ────────────────────────────────────────────────────────────────
 
 async function openClaudeMd() {
@@ -1081,7 +1229,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
-function refresh() { loadUsers(); loadSessions(); loadPlugins(); loadMarketplaces(); loadAgents(); loadSkills(); loadMcp(); }
+function refresh() { loadUsers(); loadSessions(); loadPlugins(); loadMarketplaces(); loadAgents(); loadSkills(); loadMcp(); loadNotifications(); }
 refresh();
 setInterval(loadSessions, 10000);
 </script>

@@ -343,6 +343,138 @@
       .catch(function () {});
   }
 
+  // ── Notifications panel ───────────────────────────────────────────────────
+  var _seenNotifIds = (function () {
+    try { return JSON.parse(localStorage.getItem('__gw_seen_notifs') || '[]'); } catch { return []; }
+  })();
+
+  function _saveSeen() {
+    try { localStorage.setItem('__gw_seen_notifs', JSON.stringify(_seenNotifIds)); } catch {}
+  }
+
+  var _notifBadge = null;
+  var _notifBtn = null;
+
+  function _updateBadge(notifications) {
+    if (!_notifBadge) return;
+    var unseen = notifications.filter(function (n) { return _seenNotifIds.indexOf(n.id) === -1; });
+    if (unseen.length > 0) {
+      _notifBadge.textContent = unseen.length;
+      _notifBadge.style.display = 'inline-block';
+    } else {
+      _notifBadge.style.display = 'none';
+    }
+  }
+
+  var _cachedNotifications = [];
+
+  function fetchNotifications() {
+    fetch('/__gateway/api/notifications')
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (data) {
+        _cachedNotifications = Array.isArray(data) ? data : [];
+        _updateBadge(_cachedNotifications);
+      })
+      .catch(function () {});
+  }
+
+  function openNotifications() {
+    if (document.getElementById('__gw_notif_overlay')) return;
+
+    var notifications = _cachedNotifications;
+
+    // Mark all as seen
+    notifications.forEach(function (n) {
+      if (_seenNotifIds.indexOf(n.id) === -1) _seenNotifIds.push(n.id);
+    });
+    _saveSeen();
+    _updateBadge(notifications);
+
+    var overlay = document.createElement('div');
+    overlay.id = '__gw_notif_overlay';
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:2147483646',
+      'background:rgba(0,0,0,0.5)',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    ].join(';');
+
+    var box = document.createElement('div');
+    box.style.cssText = [
+      'background:#161b22', 'color:#cdd9e5',
+      'border:1px solid #30363d', 'border-radius:8px',
+      'padding:24px', 'width:480px', 'max-width:calc(100vw - 32px)',
+      'max-height:calc(100vh - 64px)', 'overflow-y:auto',
+      'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
+    ].join(';');
+
+    var title = document.createElement('h3');
+    title.textContent = 'Уведомления';
+    title.style.cssText = 'margin:0 0 16px;font-size:16px;font-weight:600;color:#e6edf3;';
+    box.appendChild(title);
+
+    var typeColors = { info: '#79c0ff', warning: '#d29922', error: '#f85149' };
+    var typeBg = { info: 'rgba(56,139,253,0.1)', warning: 'rgba(210,153,34,0.1)', error: 'rgba(248,81,73,0.1)' };
+    var typeBorder = { info: 'rgba(56,139,253,0.3)', warning: 'rgba(210,153,34,0.3)', error: 'rgba(248,81,73,0.3)' };
+
+    if (!notifications.length) {
+      var empty = document.createElement('div');
+      empty.textContent = 'Нет активных уведомлений';
+      empty.style.cssText = 'color:#8b949e;font-size:13px;padding:12px 0;';
+      box.appendChild(empty);
+    } else {
+      notifications.forEach(function (n) {
+        var type = n.type || 'info';
+        var card = document.createElement('div');
+        card.style.cssText = [
+          'background:' + (typeBg[type] || typeBg.info),
+          'border:1px solid ' + (typeBorder[type] || typeBorder.info),
+          'border-radius:6px',
+          'padding:12px 14px',
+          'margin-bottom:10px',
+        ].join(';');
+
+        var cardTitle = document.createElement('div');
+        cardTitle.style.cssText = 'font-weight:600;font-size:13px;color:#e6edf3;margin-bottom:4px;display:flex;align-items:center;gap:6px;';
+        var typeTag = document.createElement('span');
+        typeTag.textContent = type;
+        typeTag.style.cssText = 'font-size:11px;font-weight:600;color:' + (typeColors[type] || typeColors.info) + ';text-transform:uppercase;letter-spacing:0.05em;';
+        cardTitle.appendChild(typeTag);
+        var titleText = document.createTextNode(n.title || '');
+        cardTitle.appendChild(titleText);
+        card.appendChild(cardTitle);
+
+        if (n.message) {
+          var msg = document.createElement('div');
+          msg.textContent = n.message;
+          msg.style.cssText = 'font-size:12px;color:#cdd9e5;line-height:1.5;white-space:pre-wrap;';
+          card.appendChild(msg);
+        }
+
+        box.appendChild(card);
+      });
+    }
+
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Закрыть';
+    closeBtn.style.cssText = [
+      'margin-top:8px',
+      'background:#21262d', 'color:#cdd9e5',
+      'border:1px solid #444c56', 'border-radius:5px',
+      'padding:5px 16px', 'font-size:12px',
+      'cursor:pointer', 'font-family:inherit',
+    ].join(';');
+    closeBtn.addEventListener('click', function () { document.body.removeChild(overlay); });
+    box.appendChild(closeBtn);
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) document.body.removeChild(overlay);
+    });
+  }
+
   // ── Bar ───────────────────────────────────────────────────────────────────
   function createLogoutBar() {
     var bar = document.createElement('div');
@@ -381,6 +513,35 @@
     hoverBlue(settingsBtn);
     settingsBtn.addEventListener('click', openSettings);
     bar.appendChild(settingsBtn);
+
+    // Notifications button
+    var notifWrap = document.createElement('span');
+    notifWrap.style.cssText = 'position:relative;display:inline-flex;';
+
+    _notifBtn = document.createElement('button');
+    _notifBtn.textContent = '🔔';
+    _notifBtn.title = 'Уведомления';
+    _notifBtn.style.cssText = btnStyle(['font-size:13px', 'padding:3px 8px']);
+    hoverBlue(_notifBtn);
+    _notifBtn.addEventListener('click', openNotifications);
+
+    _notifBadge = document.createElement('span');
+    _notifBadge.style.cssText = [
+      'position:absolute', 'top:-4px', 'right:-4px',
+      'background:#f85149', 'color:#fff',
+      'border-radius:10px', 'font-size:9px', 'font-weight:700',
+      'min-width:14px', 'height:14px', 'line-height:14px',
+      'text-align:center', 'padding:0 3px',
+      'pointer-events:none', 'display:none',
+    ].join(';');
+
+    notifWrap.appendChild(_notifBtn);
+    notifWrap.appendChild(_notifBadge);
+    bar.appendChild(notifWrap);
+
+    // Start polling notifications
+    fetchNotifications();
+    setInterval(fetchNotifications, 60000);
 
     // Logout button
     var btn = document.createElement('button');

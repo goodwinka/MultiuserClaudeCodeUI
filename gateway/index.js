@@ -608,6 +608,73 @@ app.delete(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Notifications API ─────────────────────────────────────────────────────────
+
+const NOTIFICATIONS_PATH = '/var/lib/multiuser-ccui/notifications.json';
+
+function readNotifications() {
+  try { return JSON.parse(fs.readFileSync(NOTIFICATIONS_PATH, 'utf8')); } catch { return []; }
+}
+
+function writeNotifications(arr) {
+  fs.mkdirSync(path.dirname(NOTIFICATIONS_PATH), { recursive: true });
+  fs.writeFileSync(NOTIFICATIONS_PATH, JSON.stringify(arr, null, 2) + '\n', { mode: 0o644 });
+}
+
+// Public: all authenticated users can read active notifications
+app.get(GW + '/api/notifications', requireAuth, (req, res) => {
+  const all = readNotifications();
+  res.json(all.filter(n => n.active));
+});
+
+// Admin: full CRUD
+app.get(GW + '/api/admin/notifications', requireAdmin, (req, res) => {
+  res.json(readNotifications());
+});
+
+app.post(GW + '/api/admin/notifications', requireAdmin, (req, res) => {
+  const { title, message, type, active } = req.body;
+  if (!title || typeof title !== 'string' || !title.trim())
+    return res.status(400).json({ error: 'title required' });
+  const notifications = readNotifications();
+  const id = Date.now();
+  const notif = {
+    id,
+    title: title.trim(),
+    message: typeof message === 'string' ? message.trim() : '',
+    type: ['info', 'warning', 'error'].includes(type) ? type : 'info',
+    active: active !== false,
+    createdAt: new Date().toISOString(),
+  };
+  notifications.push(notif);
+  writeNotifications(notifications);
+  res.json(notif);
+});
+
+app.put(GW + '/api/admin/notifications/:id', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const notifications = readNotifications();
+  const idx = notifications.findIndex(n => n.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  const { title, message, type, active } = req.body;
+  if (title !== undefined) notifications[idx].title = String(title).trim();
+  if (message !== undefined) notifications[idx].message = String(message).trim();
+  if (type !== undefined && ['info', 'warning', 'error'].includes(type)) notifications[idx].type = type;
+  if (active !== undefined) notifications[idx].active = !!active;
+  writeNotifications(notifications);
+  res.json(notifications[idx]);
+});
+
+app.delete(GW + '/api/admin/notifications/:id', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const notifications = readNotifications();
+  const idx = notifications.findIndex(n => n.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  notifications.splice(idx, 1);
+  writeNotifications(notifications);
+  res.json({ ok: true });
+});
+
 // ── User git settings ─────────────────────────────────────────────────────────
 
 /**
