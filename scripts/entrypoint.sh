@@ -36,15 +36,51 @@ const fs = require('fs');
 const f = '/etc/claude/settings.json';
 try {
   const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  let dirty = false;
   if (!s.extraKnownMarketplaces) s.extraKnownMarketplaces = {};
   if (!s.extraKnownMarketplaces['claude-plugins-official']) {
     s.extraKnownMarketplaces['claude-plugins-official'] = {
       source: { source: 'github', repo: 'anthropics/claude-plugins-official' }
     };
-    fs.writeFileSync(f, JSON.stringify(s, null, 2) + '\n');
+    dirty = true;
     console.log('Registered claude-plugins-official marketplace in settings');
   }
+  // Claude Code reads MCP server definitions from .mcp.json files, not from
+  // settings.json.  enableAllProjectMcpServers auto-approves the shared
+  // /data/.mcp.json that the gateway maintains for admin-configured servers.
+  if (s.enableAllProjectMcpServers === undefined) {
+    s.enableAllProjectMcpServers = true;
+    dirty = true;
+    console.log('Set enableAllProjectMcpServers=true in settings');
+  }
+  if (dirty) fs.writeFileSync(f, JSON.stringify(s, null, 2) + '\n');
 } catch(e) { console.error('Warning: could not patch settings.json:', e.message); }
+" 2>&1 || true
+
+# Sync /data/.mcp.json from any MCP servers already stored in settings.json
+# (covers the case where the volume is re-mounted after an upgrade)
+node -e "
+const fs = require('fs');
+const f = '/etc/claude/settings.json';
+const out = '/data/.mcp.json';
+try {
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  const servers = s.mcpServers || {};
+  const active = {};
+  for (const [name, cfg] of Object.entries(servers)) {
+    if (!cfg.disabled) {
+      const { disabled, ...rest } = cfg;
+      active[name] = rest;
+    }
+  }
+  if (Object.keys(active).length > 0) {
+    fs.writeFileSync(out, JSON.stringify({ mcpServers: active }, null, 2) + '\n', { mode: 0o644 });
+    console.log('Synced', Object.keys(active).length, 'MCP server(s) to', out);
+  } else if (fs.existsSync(out)) {
+    fs.unlinkSync(out);
+    console.log('Removed empty', out);
+  }
+} catch(e) { console.error('Warning: could not sync .mcp.json:', e.message); }
 " 2>&1 || true
 
 # Ensure shared directories are world-readable/executable
