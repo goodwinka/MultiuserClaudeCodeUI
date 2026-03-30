@@ -32,6 +32,11 @@ function init() {
 
     INSERT OR IGNORE INTO meta (key, value) VALUES ('next_uid', '10000');
   `);
+
+  // Migration: add settings column if it doesn't exist yet
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN settings TEXT NOT NULL DEFAULT '{}'`);
+  } catch { /* column already exists */ }
 }
 
 function nextUid() {
@@ -77,4 +82,14 @@ function updatePassword(id, passwordHash) {
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
 }
 
-module.exports = { init, nextUid, createUser, findByUsername, getUserById, getAllUsers, blockUser, deleteUser, updateRole, updatePassword };
+function getUserSettings(id) {
+  const row = db.prepare('SELECT settings FROM users WHERE id = ?').get(id);
+  if (!row) return {};
+  try { return JSON.parse(row.settings || '{}'); } catch { return {}; }
+}
+
+function updateUserSettings(id, settings) {
+  db.prepare('UPDATE users SET settings = ? WHERE id = ?').run(JSON.stringify(settings), id);
+}
+
+module.exports = { init, nextUid, createUser, findByUsername, getUserById, getAllUsers, blockUser, deleteUser, updateRole, updatePassword, getUserSettings, updateUserSettings };

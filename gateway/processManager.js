@@ -203,15 +203,43 @@ function setupUserDir(username, uid) {
     } catch {}
   }
 
-  // Create per-user .gitconfig so git works out of the box
+  // Create per-user .gitconfig so git works out of the box.
+  // If user already has stored settings, apply them; otherwise write defaults.
   const gitconfigPath = path.join(home, '.gitconfig');
   if (!fs.existsSync(gitconfigPath)) {
-    let gitconfig = `[user]\n\tname = ${username}\n\temail = ${username}@localhost\n`;
-    // If a git proxy is configured, include it so user processes inherit it
+    let storedSettings = {};
+    try {
+      const db = require('./db');
+      const dbUser = db.findByUsername(username);
+      if (dbUser) storedSettings = db.getUserSettings(dbUser.id);
+    } catch {}
+
+    const gitName = (storedSettings.git && storedSettings.git.name) || username;
+    const gitEmail = (storedSettings.git && storedSettings.git.email) || `${username}@localhost`;
+    let gitconfig = `[user]\n\tname = ${gitName}\n\temail = ${gitEmail}\n`;
+
+    const gitlabs = Array.isArray(storedSettings.gitlabs) ? storedSettings.gitlabs : [];
+    for (const entry of gitlabs) {
+      const rawUrl = (entry.url || '').trim().replace(/\/$/, '');
+      const token = (entry.token || '').trim();
+      if (!rawUrl || !token) continue;
+      const authedUrl = rawUrl.replace(/^(https?:\/\/)/, `$1oauth2:${token}@`);
+      gitconfig += `[url "${authedUrl}/"]\n\tinsteadOf = ${rawUrl}/\n`;
+    }
+
+    const redirects = Array.isArray(storedSettings.urlRedirects) ? storedSettings.urlRedirects : [];
+    for (const r of redirects) {
+      const from = (r.from || '').trim();
+      const to = (r.to || '').trim();
+      if (!from || !to) continue;
+      gitconfig += `[url "${to}"]\n\tinsteadOf = ${from}\n`;
+    }
+
     const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
     if (proxyUrl) {
       gitconfig += `[http]\n\tproxy = ${proxyUrl}\n`;
     }
+
     try {
       fs.writeFileSync(gitconfigPath, gitconfig, { mode: 0o644 });
     } catch (e) {

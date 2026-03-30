@@ -608,6 +608,91 @@ app.delete(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── User git settings ─────────────────────────────────────────────────────────
+
+/**
+ * Regenerate /data/users/{username}/.gitconfig from stored settings.
+ * Called on settings save and during new-user setup.
+ */
+function applyUserGitConfig(username, settings) {
+  const home = `/data/users/${username}`;
+  const gitconfigPath = path.join(home, '.gitconfig');
+
+  const git = settings.git || {};
+  const name = (git.name || '').trim() || username;
+  const email = (git.email || '').trim() || `${username}@localhost`;
+
+  let content = `[user]\n\tname = ${name}\n\temail = ${email}\n`;
+
+  // Per-GitLab token entries via url.insteadOf
+  const gitlabs = Array.isArray(settings.gitlabs) ? settings.gitlabs : [];
+  for (const entry of gitlabs) {
+    const rawUrl = (entry.url || '').trim().replace(/\/$/, '');
+    const token = (entry.token || '').trim();
+    if (!rawUrl || !token) continue;
+    const authedUrl = rawUrl.replace(/^(https?:\/\/)/, `$1oauth2:${token}@`);
+    content += `[url "${authedUrl}/"]\n\tinsteadOf = ${rawUrl}/\n`;
+  }
+
+  // Generic URL redirects via url.insteadOf
+  const redirects = Array.isArray(settings.urlRedirects) ? settings.urlRedirects : [];
+  for (const r of redirects) {
+    const from = (r.from || '').trim();
+    const to = (r.to || '').trim();
+    if (!from || !to) continue;
+    content += `[url "${to}"]\n\tinsteadOf = ${from}\n`;
+  }
+
+  // System-level git proxy (unchanged from original logic)
+  const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
+  if (proxyUrl) {
+    content += `[http]\n\tproxy = ${proxyUrl}\n`;
+  }
+
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(gitconfigPath, content, { mode: 0o644 });
+    const dbUser = db.findByUsername(username);
+    if (dbUser) {
+      try { fs.chownSync(gitconfigPath, dbUser.uid, dbUser.uid); } catch {}
+    }
+  } catch (e) {
+    console.warn(`[gw] gitconfig write warning for ${username}:`, e.message);
+  }
+}
+
+app.get(GW + '/api/user/settings', requireAuth, (req, res) => {
+  const settings = db.getUserSettings(req.user.id);
+  res.json(settings);
+});
+
+app.put(GW + '/api/user/settings', requireAuth, (req, res) => {
+  const { git, gitlabs, urlRedirects } = req.body;
+
+  if (git !== undefined && typeof git !== 'object') return res.status(400).json({ error: 'Invalid git field' });
+  if (gitlabs !== undefined && !Array.isArray(gitlabs)) return res.status(400).json({ error: 'Invalid gitlabs field' });
+  if (urlRedirects !== undefined && !Array.isArray(urlRedirects)) return res.status(400).json({ error: 'Invalid urlRedirects field' });
+
+  const settings = {
+    git: {
+      name: String((git && git.name) || '').trim(),
+      email: String((git && git.email) || '').trim(),
+    },
+    gitlabs: (gitlabs || []).map(g => ({
+      url: String(g.url || '').trim(),
+      token: String(g.token || '').trim(),
+    })).filter(g => g.url),
+    urlRedirects: (urlRedirects || []).map(r => ({
+      from: String(r.from || '').trim(),
+      to: String(r.to || '').trim(),
+    })).filter(r => r.from && r.to),
+  };
+
+  db.updateUserSettings(req.user.id, settings);
+  applyUserGitConfig(req.user.username, settings);
+  res.json({ ok: true });
+});
+
 // ── Current-user API ──────────────────────────────────────────────────────────
 
 app.get(GW + '/api/me', (req, res) => {
