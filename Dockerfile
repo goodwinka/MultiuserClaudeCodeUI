@@ -63,7 +63,10 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # ── ClaudeCodeUI ───────────────────────────────────────────────────────────────
 WORKDIR /opt/claudecodeui
+COPY patches/ /opt/patches/
 RUN git clone https://github.com/siteboon/claudecodeui.git . \
+    && cp /opt/patches/chat/ProviderSelectionEmptyState.tsx \
+          src/components/chat/view/subcomponents/ProviderSelectionEmptyState.tsx \
     && npm install \
     && VITE_IS_PLATFORM=true npm run build
 
