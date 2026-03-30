@@ -315,6 +315,7 @@ app.put(GW + '/api/admin/settings', requireAdmin, (req, res) => {
   if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
   try { JSON.parse(content); } catch { return res.status(400).json({ error: 'Некорректный JSON' }); }
   fs.writeFileSync(SETTINGS_PATH, content, { mode: 0o644 });
+  syncMcpJson();
   res.json({ ok: true });
 });
 
@@ -525,6 +526,42 @@ app.delete(GW + '/api/admin/marketplaces/:name', requireAdmin, async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Global .mcp.json sync ─────────────────────────────────────────────────────
+// Claude Code reads MCP server definitions from .mcp.json files found by walking
+// up the directory tree from the active project.  Settings.json is NOT used for
+// MCP server definitions (only for approval/deny lists).  We maintain a shared
+// /data/.mcp.json that sits above all user workspaces so every user's project
+// walk reaches it.
+
+const GLOBAL_MCP_PATH = '/data/.mcp.json';
+
+function syncMcpJson() {
+  try {
+    const settings = readSettings();
+    const servers = settings.mcpServers || {};
+    // Filter out disabled servers and strip the 'disabled' flag before writing
+    const active = {};
+    for (const [name, cfg] of Object.entries(servers)) {
+      if (!cfg.disabled) {
+        const { disabled, ...serverCfg } = cfg; // eslint-disable-line no-unused-vars
+        active[name] = serverCfg;
+      }
+    }
+    if (Object.keys(active).length > 0) {
+      fs.writeFileSync(
+        GLOBAL_MCP_PATH,
+        JSON.stringify({ mcpServers: active }, null, 2) + '\n',
+        { mode: 0o644 }
+      );
+    } else {
+      // No active servers — remove the file so Claude Code sees no servers
+      if (fs.existsSync(GLOBAL_MCP_PATH)) fs.unlinkSync(GLOBAL_MCP_PATH);
+    }
+  } catch (e) {
+    console.warn('[gateway] Failed to sync .mcp.json:', e.message);
+  }
+}
+
 // ── MCP servers (plugins) API ─────────────────────────────────────────────────
 
 const MCP_NAME_RE = /^[a-zA-Z0-9_-]+$/;
@@ -555,6 +592,7 @@ app.put(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
   settings.mcpServers = settings.mcpServers || {};
   settings.mcpServers[name] = cfg;
   writeSettings(settings);
+  syncMcpJson();
   res.json({ ok: true });
 });
 
@@ -566,6 +604,7 @@ app.delete(GW + '/api/admin/mcp/:name', requireAdmin, (req, res) => {
     return res.status(404).json({ error: 'Not found' });
   delete settings.mcpServers[name];
   writeSettings(settings);
+  syncMcpJson();
   res.json({ ok: true });
 });
 

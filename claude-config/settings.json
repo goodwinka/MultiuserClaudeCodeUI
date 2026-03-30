@@ -7,6 +7,7 @@
     "allow": [],
     "deny": []
   },
+  "enableAllProjectMcpServers": true,
   "extraKnownMarketplaces": {
     "claude-plugins-official": {
       "source": {
