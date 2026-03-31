@@ -131,6 +131,11 @@ elif [ -n "${HTTP_PROXY}" ]; then
   git config --system http.proxy "${HTTP_PROXY}"
   git config --system https.proxy "${HTTPS_PROXY:-${HTTP_PROXY}}"
 fi
+# Disable SSL verification if GIT_SSL_NO_VERIFY is set to a truthy value
+if [ "${GIT_SSL_NO_VERIFY}" = "true" ] || [ "${GIT_SSL_NO_VERIFY}" = "1" ]; then
+  echo "==> Disabling git SSL verification (GIT_SSL_NO_VERIFY=${GIT_SSL_NO_VERIFY})"
+  git config --system http.sslVerify false
+fi
 
 # ── Nginx ──────────────────────────────────────────────────────────────────────
 echo "==> Starting nginx"

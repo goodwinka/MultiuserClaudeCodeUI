@@ -236,8 +236,11 @@ function setupUserDir(username, uid) {
     }
 
     const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
-    if (proxyUrl) {
-      gitconfig += `[http]\n\tproxy = ${proxyUrl}\n`;
+    const sslNoVerify = process.env.GIT_SSL_NO_VERIFY === 'true' || process.env.GIT_SSL_NO_VERIFY === '1';
+    if (proxyUrl || sslNoVerify) {
+      gitconfig += `[http]\n`;
+      if (proxyUrl) gitconfig += `\tproxy = ${proxyUrl}\n`;
+      if (sslNoVerify) gitconfig += `\tsslVerify = false\n`;
     }
 
     try {

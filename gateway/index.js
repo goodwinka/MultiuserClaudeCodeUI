@@ -737,10 +737,13 @@ function applyUserGitConfig(username, settings) {
     content += `[url "${to}"]\n\tinsteadOf = ${from}\n`;
   }
 
-  // System-level git proxy (unchanged from original logic)
+  // System-level git proxy and SSL settings from environment
   const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
-  if (proxyUrl) {
-    content += `[http]\n\tproxy = ${proxyUrl}\n`;
+  const sslNoVerify = process.env.GIT_SSL_NO_VERIFY === 'true' || process.env.GIT_SSL_NO_VERIFY === '1';
+  if (proxyUrl || sslNoVerify) {
+    content += `[http]\n`;
+    if (proxyUrl) content += `\tproxy = ${proxyUrl}\n`;
+    if (sslNoVerify) content += `\tsslVerify = false\n`;
   }
 
   try {
