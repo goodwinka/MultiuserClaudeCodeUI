@@ -83,7 +83,13 @@ try {
 } catch(e) { console.error('Warning: could not sync .mcp.json:', e.message); }
 " 2>&1 || true
 
-# Ensure shared directories are world-readable/executable
+# Ensure volume-mounted config roots and their contents are world-readable.
+# /etc/claude and /etc/claude-code-ui are bind-mounted from the host; the host
+# directory may have been created by root with restrictive permissions (e.g. 700),
+# which would prevent non-root ClaudeCodeUI processes (uid 10000+) from reading
+# settings.json or traversing subdirectories.  Fix unconditionally on every start.
+chmod 755 /etc/claude /etc/claude-code-ui
+chmod 644 /etc/claude/settings.json /etc/claude/CLAUDE.md 2>/dev/null || true
 chmod 755 /etc/claude/agents /etc/claude/skills /etc/claude/plugins
 chmod 755 /etc/claude-code-ui/plugins
 

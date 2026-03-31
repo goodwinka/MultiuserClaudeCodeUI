@@ -281,18 +281,6 @@ async function startProcess(username, uid) {
     ? `${sysNpmGlobal}:${process.env.NODE_PATH}`
     : sysNpmGlobal;
 
-  // Read Anthropic endpoint config from global settings.json as fallback so
-  // that bash shells spawned by the terminal plugin also see ANTHROPIC_BASE_URL
-  // as a real env var (claude CLI applies settings.json env internally, but
-  // that does not propagate back to the parent shell process).
-  const _sEnv = (() => {
-    try {
-      return JSON.parse(fs.readFileSync('/etc/claude/settings.json', 'utf8')).env || {};
-    } catch { return {}; }
-  })();
-  const _anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL || _sEnv.ANTHROPIC_BASE_URL;
-  const _anthropicApiKey  = process.env.ANTHROPIC_API_KEY  || _sEnv.ANTHROPIC_API_KEY;
-
   const env = {
     HOME: `/data/users/${username}`,
     SERVER_PORT: String(port),
@@ -309,12 +297,11 @@ async function startProcess(username, uid) {
     ...(process.env.LD_LIBRARY_PATH && { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH }),
     ...(process.env.CUDA_HOME && { CUDA_HOME: process.env.CUDA_HOME }),
     NODE_ENV: 'production',
-    // Local LLM config: prefer explicit docker env vars, fall back to
-    // /etc/claude/settings.json so bash shells in the terminal plugin also
-    // see ANTHROPIC_BASE_URL (claude applies settings.json env internally but
-    // cannot export it to the parent shell process).
-    ...(_anthropicBaseUrl && { ANTHROPIC_BASE_URL: _anthropicBaseUrl }),
-    ...(_anthropicApiKey  && { ANTHROPIC_API_KEY:  _anthropicApiKey  }),
+    // Local LLM config (inherited from gateway env).
+    // Only set when actually configured — an empty string would shadow the
+    // value in ~/.claude/settings.json env section and break non-admin shells.
+    ...(process.env.ANTHROPIC_BASE_URL && { ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL }),
+    ...(process.env.ANTHROPIC_API_KEY  && { ANTHROPIC_API_KEY:  process.env.ANTHROPIC_API_KEY  }),
     // Git proxy (lowercase variants are used by curl/git/npm)
     ...(process.env.GIT_PROXY_URL && {
       http_proxy: process.env.GIT_PROXY_URL,
