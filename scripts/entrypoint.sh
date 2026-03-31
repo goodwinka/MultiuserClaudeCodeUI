@@ -121,8 +121,6 @@ git config --system safe.directory '*'
 # Default identity for commits (users can override in their own .gitconfig)
 git config --system user.email "user@localhost"
 git config --system user.name "Claude Code User"
-# Disable SSL verification by default (can be overridden per-repo)
-git config --system http.sslVerify false
 # Proxy for remote git operations (optional, driven by GIT_PROXY_URL env var)
 if [ -n "${GIT_PROXY_URL}" ]; then
   echo "==> Configuring git proxy: ${GIT_PROXY_URL}"
@@ -132,6 +130,11 @@ elif [ -n "${HTTP_PROXY}" ]; then
   echo "==> Configuring git proxy from HTTP_PROXY: ${HTTP_PROXY}"
   git config --system http.proxy "${HTTP_PROXY}"
   git config --system https.proxy "${HTTPS_PROXY:-${HTTP_PROXY}}"
+fi
+# Disable SSL verification if GIT_SSL_NO_VERIFY is set to a truthy value
+if [ "${GIT_SSL_NO_VERIFY}" = "true" ] || [ "${GIT_SSL_NO_VERIFY}" = "1" ]; then
+  echo "==> Disabling git SSL verification (GIT_SSL_NO_VERIFY=${GIT_SSL_NO_VERIFY})"
+  git config --system http.sslVerify false
 fi
 
 # ── Nginx ──────────────────────────────────────────────────────────────────────
