@@ -297,11 +297,12 @@ async function startProcess(username, uid) {
     ...(process.env.LD_LIBRARY_PATH && { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH }),
     ...(process.env.CUDA_HOME && { CUDA_HOME: process.env.CUDA_HOME }),
     NODE_ENV: 'production',
-    // Local LLM config (inherited from gateway env).
-    // Only set when actually configured — an empty string would shadow the
-    // value in ~/.claude/settings.json env section and break non-admin shells.
-    ...(process.env.ANTHROPIC_BASE_URL && { ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL }),
-    ...(process.env.ANTHROPIC_API_KEY  && { ANTHROPIC_API_KEY:  process.env.ANTHROPIC_API_KEY  }),
+    // ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY are intentionally NOT passed here.
+    // LLM config lives in /etc/claude/settings.json (admin settings panel) and
+    // is symlinked to ~/.claude/settings.json for every user.  The claude CLI and
+    // Agents SDK both read that file directly.  Passing these vars from the
+    // gateway env would shadow the settings.json values with the docker-compose
+    // defaults, causing the CLI to connect to the wrong endpoint.
     // Git proxy (lowercase variants are used by curl/git/npm)
     ...(process.env.GIT_PROXY_URL && {
       http_proxy: process.env.GIT_PROXY_URL,
