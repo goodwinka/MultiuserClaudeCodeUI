@@ -297,12 +297,25 @@ async function startProcess(username, uid) {
     ...(process.env.LD_LIBRARY_PATH && { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH }),
     ...(process.env.CUDA_HOME && { CUDA_HOME: process.env.CUDA_HOME }),
     NODE_ENV: 'production',
-    // ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY are intentionally NOT passed here.
-    // LLM config lives in /etc/claude/settings.json (admin settings panel) and
-    // is symlinked to ~/.claude/settings.json for every user.  The claude CLI and
-    // Agents SDK both read that file directly.  Passing these vars from the
-    // gateway env would shadow the settings.json values with the docker-compose
-    // defaults, causing the CLI to connect to the wrong endpoint.
+    // LLM endpoint config must be in process.env before ClaudeCodeUI starts so
+    // that the claude CLI binary picks it up at SDK initialisation time (the
+    // Anthropic Node SDK reads ANTHROPIC_BASE_URL once when the module loads,
+    // before settings.json env-section values are applied).
+    // Priority: /etc/claude/settings.json (admin UI) > docker-compose env vars.
+    // This means changes made through the admin settings panel take effect for
+    // all users on their next session start without redeploying the container.
+    ...((() => {
+      const sEnv = (() => {
+        try { return JSON.parse(fs.readFileSync('/etc/claude/settings.json', 'utf8')).env || {}; }
+        catch { return {}; }
+      })();
+      const baseUrl = sEnv.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL;
+      const apiKey  = sEnv.ANTHROPIC_API_KEY  || process.env.ANTHROPIC_API_KEY;
+      return {
+        ...(baseUrl && { ANTHROPIC_BASE_URL: baseUrl }),
+        ...(apiKey  && { ANTHROPIC_API_KEY:  apiKey  }),
+      };
+    })()),
     // Git proxy (lowercase variants are used by curl/git/npm)
     ...(process.env.GIT_PROXY_URL && {
       http_proxy: process.env.GIT_PROXY_URL,
