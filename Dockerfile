@@ -107,20 +107,32 @@ RUN mkdir -p /tmp/xterm-build \
          @xterm/addon-fit@0.10.0 \
          @xterm/addon-web-links@0.11.0 \
          @xterm/addon-search@0.15.0 \
+         @xterm/addon-webgl@0.18.0 \
+         @xterm/addon-clipboard@0.1.0 \
+         @xterm/addon-unicode11@0.8.0 \
     && npm install --save-dev esbuild \
     && mkdir -p /opt/esm-bundles/@xterm \
-    && printf 'export * from "@xterm/xterm";\n'          > entry.mjs \
+    && printf 'export * from "@xterm/xterm";\n'           > entry.mjs \
     && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
          --outfile=/opt/esm-bundles/@xterm/xterm@5.5.0 \
-    && printf 'export * from "@xterm/addon-fit";\n'      > entry.mjs \
+    && printf 'export * from "@xterm/addon-fit";\n'       > entry.mjs \
     && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
          --outfile=/opt/esm-bundles/@xterm/addon-fit@0.10.0 \
-    && printf 'export * from "@xterm/addon-web-links";\n' > entry.mjs \
+    && printf 'export * from "@xterm/addon-web-links";\n'  > entry.mjs \
     && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
          --outfile=/opt/esm-bundles/@xterm/addon-web-links@0.11.0 \
-    && printf 'export * from "@xterm/addon-search";\n'   > entry.mjs \
+    && printf 'export * from "@xterm/addon-search";\n'    > entry.mjs \
     && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
          --outfile=/opt/esm-bundles/@xterm/addon-search@0.15.0 \
+    && printf 'export * from "@xterm/addon-webgl";\n'     > entry.mjs \
+    && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
+         --outfile=/opt/esm-bundles/@xterm/addon-webgl@0.18.0 \
+    && printf 'export * from "@xterm/addon-clipboard";\n' > entry.mjs \
+    && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
+         --outfile=/opt/esm-bundles/@xterm/addon-clipboard@0.1.0 \
+    && printf 'export * from "@xterm/addon-unicode11";\n'  > entry.mjs \
+    && ./node_modules/.bin/esbuild entry.mjs --bundle --format=esm \
+         --outfile=/opt/esm-bundles/@xterm/addon-unicode11@0.8.0 \
     && cd / && rm -rf /tmp/xterm-build
 
 # ── Gateway dependencies ───────────────────────────────────────────────────────
@@ -143,7 +155,8 @@ RUN chmod +x /opt/scripts/*.sh
 # Store the default outside volume-mounted paths so entrypoint can seed it
 RUN mkdir -p /opt/defaults/claude
 COPY claude-config/settings.json /opt/defaults/claude/settings.json
-RUN chmod 644 /opt/defaults/claude/settings.json
+COPY claude-config/CLAUDE.md     /opt/defaults/claude/CLAUDE.md
+RUN chmod 644 /opt/defaults/claude/settings.json /opt/defaults/claude/CLAUDE.md
 
 # ── Runtime directories ────────────────────────────────────────────────────────
 # These are created here for non-volume runs; entrypoint re-creates them

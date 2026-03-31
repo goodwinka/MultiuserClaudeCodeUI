@@ -353,6 +353,29 @@ const CLAUDE_BIN = (() => {
   return 'claude'; // fallback: let execFile search PATH itself
 })();
 
+// After any plugin install / uninstall / enable / disable, ensure all files
+// under /etc/claude/plugins and /etc/claude/npm-global are world-readable and
+// that native addons (.node) are world-executable.  Without this, non-root
+// ClaudeCodeUI processes (uid 10000+) cannot load plugin assets or native
+// modules, so the terminal plugin backend silently fails and the shell tab
+// appears to have no settings.
+function fixPluginPermissions() {
+  const dirs = ['/etc/claude/plugins', '/etc/claude/npm-global'];
+  for (const dir of dirs) {
+    try {
+      // Directories: world-readable + executable (listable)
+      execFile('find', [dir, '-type', 'd', '-exec', 'chmod', 'a+rx', '{}', '+'],
+        { timeout: 10000 }, () => {});
+      // Regular files: world-readable
+      execFile('find', [dir, '-type', 'f', '-exec', 'chmod', 'a+r', '{}', '+'],
+        { timeout: 10000 }, () => {});
+      // Native Node.js addons: also need execute bit to be dlopen()'d
+      execFile('find', [dir, '-name', '*.node', '-exec', 'chmod', 'a+x', '{}', '+'],
+        { timeout: 10000 }, () => {});
+    } catch { /* best-effort */ }
+  }
+}
+
 function claudeCmd(args, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     // Include the system npm global lib in NODE_PATH so plugin build steps can
@@ -453,6 +476,7 @@ app.post(GW + '/api/admin/plugins/install', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Invalid plugin name' });
   try {
     const out = await claudeCmd(['plugin', 'install', plugin, '--scope', 'user'], 180000);
+    fixPluginPermissions();
     res.json({ ok: true, output: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -463,6 +487,7 @@ app.post(GW + '/api/admin/plugins/uninstall', requireAdmin, async (req, res) => 
     return res.status(400).json({ error: 'Invalid plugin name' });
   try {
     const out = await claudeCmd(['plugin', 'uninstall', plugin]);
+    fixPluginPermissions();
     res.json({ ok: true, output: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -473,6 +498,7 @@ app.post(GW + '/api/admin/plugins/enable', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Invalid plugin name' });
   try {
     const out = await claudeCmd(['plugin', 'enable', plugin]);
+    fixPluginPermissions();
     res.json({ ok: true, output: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -483,6 +509,7 @@ app.post(GW + '/api/admin/plugins/disable', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Invalid plugin name' });
   try {
     const out = await claudeCmd(['plugin', 'disable', plugin]);
+    fixPluginPermissions();
     res.json({ ok: true, output: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
