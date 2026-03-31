@@ -740,7 +740,9 @@ function applyUserGitConfig(username, settings) {
   // System-level git proxy (unchanged from original logic)
   const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
   if (proxyUrl) {
-    content += `[http]\n\tproxy = ${proxyUrl}\n`;
+    content += `[http]\n\tproxy = ${proxyUrl}\n\tsslVerify = false\n`;
+  } else {
+    content += `[http]\n\tsslVerify = false\n`;
   }
 
   try {

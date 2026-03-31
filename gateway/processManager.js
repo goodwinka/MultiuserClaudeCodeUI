@@ -237,7 +237,9 @@ function setupUserDir(username, uid) {
 
     const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
     if (proxyUrl) {
-      gitconfig += `[http]\n\tproxy = ${proxyUrl}\n`;
+      gitconfig += `[http]\n\tproxy = ${proxyUrl}\n\tsslVerify = false\n`;
+    } else {
+      gitconfig += `[http]\n\tsslVerify = false\n`;
     }
 
     try {
