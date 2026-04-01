@@ -729,11 +729,19 @@ function applyUserGitConfig(username, settings) {
   }
 
   // Generic URL redirects via url.insteadOf
+  // Normalise HTTP/HTTPS base URLs to always have a trailing slash so that
+  // git's prefix-replacement logic produces a valid URL.  Without the slash,
+  // "insteadOf = https://host" applied to "https://host/path" would yield
+  // "<base>/path" (correct) but "insteadOf = https://host/" applied to the
+  // same URL with a base lacking the slash would yield "<base>path" (broken).
+  // Keeping both sides consistent avoids double-slashes or missing slashes.
   const redirects = Array.isArray(settings.urlRedirects) ? settings.urlRedirects : [];
   for (const r of redirects) {
-    const from = (r.from || '').trim();
-    const to = (r.to || '').trim();
+    let from = (r.from || '').trim();
+    let to   = (r.to   || '').trim();
     if (!from || !to) continue;
+    if (/^https?:\/\//i.test(from) && !from.endsWith('/')) from += '/';
+    if (/^https?:\/\//i.test(to)   && !to.endsWith('/'))   to   += '/';
     content += `[url "${to}"]\n\tinsteadOf = ${from}\n`;
   }
 

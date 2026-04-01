@@ -229,9 +229,11 @@ function setupUserDir(username, uid) {
 
     const redirects = Array.isArray(storedSettings.urlRedirects) ? storedSettings.urlRedirects : [];
     for (const r of redirects) {
-      const from = (r.from || '').trim();
-      const to = (r.to || '').trim();
+      let from = (r.from || '').trim();
+      let to   = (r.to   || '').trim();
       if (!from || !to) continue;
+      if (/^https?:\/\//i.test(from) && !from.endsWith('/')) from += '/';
+      if (/^https?:\/\//i.test(to)   && !to.endsWith('/'))   to   += '/';
       gitconfig += `[url "${to}"]\n\tinsteadOf = ${from}\n`;
     }
 
@@ -286,6 +288,10 @@ async function startProcess(username, uid) {
 
   const env = {
     HOME: `/data/users/${username}`,
+    // Explicitly point git to the user-specific gitconfig so that url.insteadOf
+    // redirect and GitLab oauth2-token rules are always honoured, even if some
+    // code path inside ClaudeCodeUI inadvertently changes HOME at runtime.
+    GIT_CONFIG_GLOBAL: `/data/users/${username}/.gitconfig`,
     SERVER_PORT: String(port),
     HOST: '127.0.0.1',
     VITE_IS_PLATFORM: 'true',           // bypass claudecodeui's own auth
