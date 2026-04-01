@@ -406,9 +406,8 @@ async function getOrStart(username, uid) {
 function killUser(username) {
   const session = sessions.get(username);
   if (session) {
-    session.proc.kill('SIGTERM');
-    sessions.delete(username);
-    releasePort(session.port);
+    sessions.delete(username); // remove immediately so no new requests proxy here
+    session.proc.kill('SIGTERM'); // exit handler will release the port
     console.log(`[pm] killed session for ${username}`);
   }
 }
