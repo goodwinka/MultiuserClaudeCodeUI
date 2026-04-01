@@ -360,7 +360,7 @@ const CLAUDE_BIN = (() => {
 // modules, so the terminal plugin backend silently fails and the shell tab
 // appears to have no settings.
 function fixPluginPermissions() {
-  const dirs = ['/etc/claude/plugins', '/etc/claude/npm-global'];
+  const dirs = ['/etc/claude/plugins', '/etc/claude/npm-global', '/etc/claude-code-ui/plugins'];
   for (const dir of dirs) {
     try {
       // Directories: world-readable + executable (listable)
@@ -925,6 +925,13 @@ server.on('upgrade', async (req, socket, head) => {
 
   try {
     const port = await pm.getOrStart(user.username, user.role === 'admin' ? 0 : user.uid);
+    // Keep the session alive while the WebSocket is open.
+    // Without this, the 30-minute idle timer would fire and kill the claudecodeui
+    // process while the user is actively using the Shell tab or Terminal plugin.
+    const activityInterval = setInterval(() => {
+      pm.touchSession(user.username);
+    }, 60_000);
+    socket.once('close', () => clearInterval(activityInterval));
     proxy.ws(req, socket, head, { target: `ws://127.0.0.1:${port}` });
   } catch (err) {
     socket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
