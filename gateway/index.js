@@ -60,7 +60,11 @@ function tokenFromReq(req) {
 function requireAuth(req, res, next) {
   const user = verifyToken(tokenFromReq(req));
   if (!user) return res.redirect(GW + '/login');
-  if (user.blocked) return res.redirect(GW + '/login?error=blocked');
+  const dbUser = db.getUserById(user.id);
+  if (!dbUser || dbUser.blocked) {
+    res.clearCookie('token');
+    return res.redirect(GW + '/login?error=blocked');
+  }
   req.user = user;
   next();
 }
@@ -69,6 +73,8 @@ function requireAdmin(req, res, next) {
   const user = verifyToken(tokenFromReq(req));
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   if (user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  const dbUser = db.getUserById(user.id);
+  if (!dbUser || dbUser.blocked) return res.status(403).json({ error: 'Forbidden' });
   req.user = user;
   next();
 }
@@ -148,6 +154,8 @@ app.get(GW + '/api/admin/users', requireAdmin, (req, res) => {
 });
 
 app.post(GW + '/api/admin/users/:id/block', requireAdmin, (req, res) => {
+  if (String(req.params.id) === String(req.user.id))
+    return res.status(400).json({ error: 'Нельзя заблокировать собственный аккаунт' });
   const user = db.getUserById(req.params.id);
   if (user) pm.killUser(user.username);
   db.blockUser(req.params.id, 1);
@@ -160,7 +168,14 @@ app.post(GW + '/api/admin/users/:id/unblock', requireAdmin, (req, res) => {
 });
 
 app.delete(GW + '/api/admin/users/:id', requireAdmin, (req, res) => {
+  if (String(req.params.id) === String(req.user.id))
+    return res.status(400).json({ error: 'Нельзя удалить собственный аккаунт' });
   const user = db.getUserById(req.params.id);
+  if (user && user.role === 'admin') {
+    const adminCount = db.getAllUsers().filter(u => u.role === 'admin').length;
+    if (adminCount <= 1)
+      return res.status(400).json({ error: 'Нельзя удалить последнего администратора' });
+  }
   if (user) {
     pm.killUser(user.username);
     pm.deleteUserDir(user.username);
@@ -198,7 +213,17 @@ app.post(GW + '/api/admin/users', requireAdmin, (req, res) => {
 });
 
 app.patch(GW + '/api/admin/users/:id/role', requireAdmin, (req, res) => {
+  if (String(req.params.id) === String(req.user.id))
+    return res.status(400).json({ error: 'Нельзя изменить собственную роль' });
   const role = req.body.role === 'admin' ? 'admin' : 'user';
+  if (role !== 'admin') {
+    const targetUser = db.getUserById(req.params.id);
+    if (targetUser && targetUser.role === 'admin') {
+      const adminCount = db.getAllUsers().filter(u => u.role === 'admin').length;
+      if (adminCount <= 1)
+        return res.status(400).json({ error: 'Нельзя разжаловать последнего администратора' });
+    }
+  }
   db.updateRole(req.params.id, role);
   res.json({ ok: true });
 });
@@ -942,7 +967,7 @@ if (!db.findByUsername('admin')) {
   const uid = db.nextUid();
   db.createUser('admin', bcrypt.hashSync(ADMIN_PASS, 10), 'admin', uid);
   pm.setupUserDir('admin', 0);
-  console.log(`[gw] Admin account created (password: ${ADMIN_PASS})`);
+  console.log('[gw] Admin account created');
 }
 
 server.listen(4000, '0.0.0.0', () => {
