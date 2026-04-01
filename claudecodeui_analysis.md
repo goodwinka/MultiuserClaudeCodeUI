@@ -127,80 +127,209 @@ const PTY_SESSION_TIMEOUT = 30 * 60 * 1000;  // 30 минут
 
 ---
 
-## 3. Terminal (xterm.js) — слой эмуляции терминала
+## 3. Terminal Plugin — плагин Web Terminal
 
-Отдельного "Terminal плагина" нет — xterm.js это единый слой эмуляции, используемый во всём приложении через хук `useShellTerminal.ts`.
+**Репозиторий:** `https://github.com/cloudcli-ai/cloudcli-plugin-terminal`  
+**Устанавливается в:** `~/.claude-code-ui/plugins/cloudcli-plugin-terminal/`  
+**manifest.json name:** `web-terminal`
 
-### Аддоны
+Это **отдельный плагин**, независимый от Shell Tab. Он устанавливается через Settings > Plugins по git URL. Имеет собственный PTY-сервер и собственный xterm.js на фронтенде.
 
-| Аддон | Пакет | Назначение |
-|-------|-------|-----------|
-| `FitAddon` | `@xterm/addon-fit` | Авто-resize cols/rows под контейнер |
-| `WebLinksAddon` | `@xterm/addon-web-links` | Кликабельные URL (пропускается в minimal mode) |
-| `WebglAddon` | `@xterm/addon-webgl` | GPU-ускоренный рендеринг; fallback на Canvas |
+---
 
-### Настройки (`constants/constants.ts`)
+### 3.1 Система плагинов claudecodeui
 
-```typescript
+**Хранилище плагинов:**
+- Код: `~/.claude-code-ui/plugins/<repo-name>/`
+- Конфиг: `~/.claude-code-ui/plugins.json` (права 0o600)
+
+**Установка (`installPluginFromGit`):**
+1. `git clone --depth 1 -- <url> <tmpdir>`
+2. Валидация `manifest.json`
+3. `npm install --ignore-scripts` (без postinstall хуков)
+4. Если есть `build` в `package.json`: `npm run build` (таймаут 60с)
+5. Атомарный `rename(tmpdir, targetDir)`
+6. Авто-запуск plugin server если `manifest.server` указан
+
+**Формат `manifest.json`:**
+```json
 {
-  cursorBlink: true,
-  fontSize: 14,
-  fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-  allowProposedApi: true,
-  allowTransparency: false,
-  convertEol: true,
-  scrollback: 10000,
-  tabStopWidth: 4,
-  windowsMode: false,
-  macOptionIsMeta: true,
-  macOptionClickForcesSelection: true,
-  theme: { background: '#1e1e1e', foreground: '#d4d4d4' }  // VS Code Dark+
+  "name": "web-terminal",
+  "displayName": "Terminal",
+  "version": "1.0.1",
+  "description": "Full-featured web terminal with multi-tab support, powered by xterm.js",
+  "author": "CloudCLI UI",
+  "icon": "icon.svg",
+  "type": "module",
+  "slot": "tab",
+  "entry": "dist/index.js",
+  "server": "dist/server.js",
+  "permissions": []
 }
 ```
 
-### Поток ввода (фронтенд → бэкенд)
+---
 
-1. `terminal.onData(data => sendSocketMessage(ws, { type: 'input', data }))` — каждое нажатие через WS.
-2. `Ctrl/Cmd+V` перехватывается → `navigator.clipboard.readText()` → `input` сообщение.
-3. `Ctrl/Cmd+C` с выделением → копирует; без выделения → SIGINT в PTY.
-4. Minimal auth режим: `c` без модификаторов → копирует `authUrl` в clipboard.
+### 3.2 Запуск plugin subprocess (`plugin-process-manager.js`)
 
-### Поток resize
+```javascript
+spawn('node', [serverPath], {
+  cwd: pluginDir,
+  env: {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    NODE_ENV: process.env.NODE_ENV || 'production',
+    PLUGIN_NAME: name,      // 'web-terminal'
+  },
+  stdio: ['ignore', 'pipe', 'pipe'],
+})
+```
 
-- `ResizeObserver` на контейнере → дебаунс 50мс → `fitAddon.fit()` → `{ type: 'resize', cols, rows }` в WS.
-- Сервер: `shellProcess.resize(cols, rows)`.
+**Протокол готовности:** плагин должен напечатать в stdout JSON-строку в течение **10 секунд**:
+```json
+{"ready": true, "port": 54321}
+```
 
-### Поток вывода (бэкенд → фронтенд)
+Порт выбирается через `server.listen(0, '127.0.0.1')` — ОС назначает свободный порт.
 
-- `shellProcess.onData(data → ws.send({ type: 'output', data }))` — сырые ANSI-данные.
-- Фронтенд: `terminal.write(output)` — xterm.js рендерит.
-- Ring buffer 5000 чанков на сервере для replay при переподключении.
+**Остановка:** SIGTERM → ожидание → SIGKILL через 5 секунд.
 
-### Жизненный цикл процесса
+---
 
-| Событие | Действие |
-|---------|---------|
-| Spawn | `node-pty` → `bash -c "<cmd>"` в cwd=проект |
-| Exit | Сообщение клиенту, удаление из `ptySessionsMap` |
-| Disconnect | PTY живёт 30 мин, буфер сохраняется |
-| Reconnect | PTY переиспользуется, буфер реплеируется |
-| Restart (фронтенд) | 200мс задержка → `disconnectFromShell()` + `disposeTerminal()` → заново |
+### 3.3 Сервер плагина (`src/server.ts`)
+
+```typescript
+// Запуск PTY
+pty.spawn(SHELL, [], {
+  name: 'xterm-256color',
+  cols: 80,
+  rows: 24,
+  cwd: HOME,
+  // наследует env процесса (PATH, HOME, USER, etc.)
+})
+```
+
+- `SHELL` — из `process.env.SHELL` (например `/bin/bash`)
+- `cwd` — из `process.env.HOME`
+- Не получает путь к проекту автоматически
+
+**WebSocket сервер плагина:** слушает на `/ws`
+
+| Сообщение (клиент → плагин) | Описание |
+|-----------------------------|---------|
+| `{ type: 'input', data }` | Ввод → PTY stdin |
+| `{ type: 'resize', cols, rows }` | Resize (cols: 1-500, rows: 1-200) |
+| `{ type: 'ping' }` | → ответ `{ type: 'pong' }` |
+
+| Сообщение (плагин → клиент) | Описание |
+|-----------------------------|---------|
+| `{ type: 'ready', sessionId, shell, cwd }` | При подключении |
+| `{ type: 'output', data }` | Сырой PTY вывод |
+| `{ type: 'pong' }` | Ответ на ping |
+
+**Backpressure:** `pty.pause()` перед `ws.send()`, `pty.resume()` в колбэке отправки.
+
+**Зависимости:** `node-pty ^1.1.0`, `ws ^8.14.0`. `findModule()` ищет их в родительских директориях (до 10 уровней), а также в `/opt/claudecodeui`, `/workspace/claudecodeui`, `~/claudecodeui`.
+
+**Graceful shutdown (SIGTERM/SIGINT):** убивает все PTY → `server.close()` → `setTimeout(process.exit(1), 3000)`.
+
+---
+
+### 3.4 Проксирование через host (`server/index.js`)
+
+**HTTP RPC:** `ALL /api/plugins/:name/rpc/*` → `http://127.0.0.1:<port>/<rpcPath>`
+
+**WebSocket прокси:**
+```javascript
+// Клиент подключается к:  wss://host/plugin-ws/web-terminal?token=<jwt>
+// Хост проксирует на:     ws://127.0.0.1:<port>/ws
+
+function handlePluginWsProxy(clientWs, pathname) {
+  const pluginName = pathname.replace('/plugin-ws/', '');
+  const port = getPluginPort(pluginName);
+  const upstream = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  // двунаправленный relay без трансформации сообщений
+  upstream.on('message', (data) => clientWs.send(data));
+  clientWs.on('message', (data) => upstream.send(data));
+}
+```
+
+Аутентификация через `verifyClient` выполняется до входа в этот обработчик.
+
+---
+
+### 3.5 Фронтенд плагина (`src/index.ts`)
+
+- Состояние хранится в `window.__wtState` — переживает mount/unmount циклы
+- xterm.js аддоны загружаются с CDN `esm.sh` (xterm 5.5.0, fit 0.10.0, webgl 0.18.0)
+- **5 тем:** VS Dark, One Dark, Dracula, Solarized Dark, Light
+- **Размер шрифта:** 8–32px, сохраняется в `localStorage['web-terminal-prefs']`
+- **Mobile keybar:** ESC, TAB, CTRL, ALT, стрелки, спецсимволы
+- **Горячие клавиши:** `Cmd/Ctrl+C` копирует выделение, `Cmd/Ctrl+V` вставляет, `Cmd/Ctrl+Shift+T` новая вкладка
+- **Keepalive:** ping каждые 25 секунд
+
+**Plugin API contract:**
+```typescript
+interface PluginModule {
+  mount(container: HTMLElement, api: PluginAPI): void | Promise<void>;
+  unmount?(container: HTMLElement): void;
+}
+// api.rpc() → POST /api/plugins/web-terminal/rpc/<path>
+// api.onContextChange() → получает { theme, project, session }
+```
 
 ---
 
 ## 4. Итоговая схема
 
+### Shell Tab (встроенный, Claude Code)
 ```
 Браузер (React / xterm.js)
          |
          |  WebSocket  ws://host/shell?token=<jwt>
          |
-    Сервер (Node.js / server/index.js)
+    server/index.js  (handleShellConnection)
          |
          |  node-pty.spawn('bash', ['-c', 'claude --resume "<id>" || claude'], {
          |    cwd: /path/to/project,
-         |    env: { TERM: 'xterm-256color', COLORTERM: 'truecolor', FORCE_COLOR: '3' }
+         |    env: { ...process.env, TERM:'xterm-256color', COLORTERM:'truecolor', FORCE_COLOR:'3' }
          |  })
          |
     PTY-процесс: claude / cursor-agent / codex / gemini
+    PTY-кэш: 30 мин, ring buffer 5000 чанков
 ```
+
+### Terminal Plugin (Web Terminal)
+```
+Браузер (xterm.js, загружен из dist/index.js плагина)
+         |
+         |  WebSocket  wss://host/plugin-ws/web-terminal?token=<jwt>
+         |
+    server/index.js  (handlePluginWsProxy)
+         |  двунаправленный relay, без трансформации
+         |
+    plugin subprocess  node dist/server.js
+    (cwd: ~/.claude-code-ui/plugins/cloudcli-plugin-terminal/,
+     env: { PATH, HOME, NODE_ENV='production', PLUGIN_NAME='web-terminal' })
+         |
+         |  node-pty.spawn(SHELL, [], {
+         |    name: 'xterm-256color',
+         |    cols:80, rows:24,
+         |    cwd: HOME   // НЕ директория проекта!
+         |  })
+         |
+    PTY-процесс: $SHELL (bash/zsh/etc.)
+    Без кэша сессий — каждое подключение новый PTY
+```
+
+### Ключевые отличия Shell Tab vs Terminal Plugin
+
+| Аспект | Shell Tab | Terminal Plugin |
+|--------|-----------|-----------------|
+| Что запускает | `claude` (AI CLI) | `$SHELL` (bash/zsh) |
+| cwd | директория проекта | `$HOME` |
+| env | `...process.env` + TERM/COLORTERM | только PATH, HOME, NODE_ENV |
+| PTY-кэш | 30 мин, с буфером | нет |
+| Протокол WS | JSON-сообщения (`init/input/resize/output`) | то же, через proxy |
+| Интеграция | встроена в host | отдельный subprocess на случайном порту |
+| Аутентификация | JWT токен в WS URL | JWT токен в WS URL (хост проверяет) |
