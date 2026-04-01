@@ -72,9 +72,9 @@ function requireAuth(req, res, next) {
 function requireAdmin(req, res, next) {
   const user = verifyToken(tokenFromReq(req));
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
-  if (user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  if (user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' }); // fast-fail without DB hit
   const dbUser = db.getUserById(user.id);
-  if (!dbUser || dbUser.blocked) return res.status(403).json({ error: 'Forbidden' });
+  if (!dbUser || dbUser.blocked || dbUser.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
   req.user = user;
   next();
 }
@@ -82,6 +82,8 @@ function requireAdmin(req, res, next) {
 function requireAdminPage(req, res, next) {
   const user = verifyToken(tokenFromReq(req));
   if (!user || user.role !== 'admin') return res.redirect(GW + '/login');
+  const dbUser = db.getUserById(user.id);
+  if (!dbUser || dbUser.blocked || dbUser.role !== 'admin') return res.redirect(GW + '/login');
   req.user = user;
   next();
 }
@@ -903,10 +905,10 @@ app.use(async (req, res) => {
   }
 
   try {
-    const port = await pm.getOrStart(user.username, user.role === 'admin' ? 0 : user.uid);
+    const port = await pm.getOrStart(dbUser.username, dbUser.role === 'admin' ? 0 : dbUser.uid);
     proxy.web(req, res, { target: `http://127.0.0.1:${port}` });
   } catch (err) {
-    console.error(`[gw] proxy error for ${user.username}:`, err.message);
+    console.error(`[gw] proxy error for ${dbUser.username}:`, err.message);
     res.status(502).send(`<pre>Could not start session:\n${err.message}\n\nCheck server logs.</pre>`);
   }
 });
@@ -949,7 +951,7 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   try {
-    const port = await pm.getOrStart(user.username, user.role === 'admin' ? 0 : user.uid);
+    const port = await pm.getOrStart(dbUser.username, dbUser.role === 'admin' ? 0 : dbUser.uid);
     proxy.ws(req, socket, head, { target: `ws://127.0.0.1:${port}` });
   } catch (err) {
     socket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
