@@ -172,7 +172,7 @@
     box.appendChild(section('Перенаправление URL (git)'));
 
     var hint = document.createElement('div');
-    hint.textContent = 'Например: откуда → gitlab-internal.local, куда → localhost:8080';
+    hint.textContent = 'Указывайте полный URL с протоколом и слешем, например: https://gitlab.company.local/ → http://10.0.0.5:8080/';
     hint.style.cssText = 'font-size:11px;color:#6e7681;margin-bottom:8px;';
     box.appendChild(hint);
 
