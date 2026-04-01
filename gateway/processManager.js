@@ -448,4 +448,9 @@ setInterval(() => {
   }
 }, 60_000);
 
-module.exports = { getOrStart, killUser, deleteUserDir, getActiveSessions, setupUserDir };
+function touchSession(username) {
+  const s = sessions.get(username);
+  if (s) s.lastActivity = Date.now();
+}
+
+module.exports = { getOrStart, killUser, deleteUserDir, getActiveSessions, setupUserDir, touchSession };

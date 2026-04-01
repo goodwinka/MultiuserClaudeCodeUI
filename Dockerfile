@@ -92,6 +92,8 @@ COPY patches/ /opt/patches/
 RUN git clone https://github.com/siteboon/claudecodeui.git . \
     && cp /opt/patches/chat/ProviderSelectionEmptyState.tsx \
           src/components/chat/view/subcomponents/ProviderSelectionEmptyState.tsx \
+    && cp /opt/patches/server/utils/plugin-process-manager.js \
+          server/utils/plugin-process-manager.js \
     && npm install \
     && VITE_IS_PLATFORM=true npm run build
 

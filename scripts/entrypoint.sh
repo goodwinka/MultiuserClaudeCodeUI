@@ -97,12 +97,12 @@ chmod 755 /etc/claude-code-ui/plugins
 # (uid 10000+).  Plugins are installed as root via the admin panel; without this
 # step non-root processes can't read JS assets or load native .node addons, which
 # causes the terminal plugin backend to fail and the shell tab to show no settings.
-find /etc/claude/plugins /etc/claude/npm-global \
+find /etc/claude/plugins /etc/claude/npm-global /etc/claude-code-ui/plugins \
     -type f -exec chmod a+r  {} + 2>/dev/null || true
-find /etc/claude/plugins /etc/claude/npm-global \
+find /etc/claude/plugins /etc/claude/npm-global /etc/claude-code-ui/plugins \
     -type d -exec chmod a+rx {} + 2>/dev/null || true
 # Native Node.js addons (.node) must also be executable
-find /etc/claude/plugins /etc/claude/npm-global \
+find /etc/claude/plugins /etc/claude/npm-global /etc/claude-code-ui/plugins \
     -name "*.node" -exec chmod a+x {} + 2>/dev/null || true
 
 # Set up a global "home" for managing plugins as root.
