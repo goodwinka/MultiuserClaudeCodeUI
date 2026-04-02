@@ -203,21 +203,6 @@ function setupUserDir(username, uid) {
     } catch {}
   }
 
-  // Pre-create ~/.claude.json so that the claude-agent-sdk's detectFileEncoding()
-  // call at startup does not fail with ENOENT.  The SDK reads this file to detect
-  // its character encoding before parsing it; when the file is absent the SDK
-  // logs "detectFileEncoding failed for expected reason: ENOENT" on every single
-  // session start.  Initialising it as an empty JSON object is safe — the SDK
-  // merges it with its own defaults on first read.
-  const claudeJsonPath = path.join(home, '.claude.json');
-  if (!fs.existsSync(claudeJsonPath)) {
-    try {
-      fs.writeFileSync(claudeJsonPath, '{}', { mode: 0o600 });
-    } catch (e) {
-      console.warn(`[pm] .claude.json pre-create warning for ${username}:`, e.message);
-    }
-  }
-
   // Create per-user .gitconfig so git works out of the box.
   // If user already has stored settings, apply them; otherwise write defaults.
   const gitconfigPath = path.join(home, '.gitconfig');
@@ -275,7 +260,6 @@ function setupUserDir(username, uid) {
     fs.chownSync(codeUiDir, uid, uid);
     // The symlink target (/etc/claude/settings.json) stays root-owned (644)
     if (fs.existsSync(gitconfigPath)) fs.chownSync(gitconfigPath, uid, uid);
-    if (fs.existsSync(claudeJsonPath)) fs.chownSync(claudeJsonPath, uid, uid);
   } catch (e) {
     console.warn(`[pm] chown warning for ${username}:`, e.message);
   }

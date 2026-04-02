@@ -163,7 +163,9 @@ RUN chmod 644 /opt/defaults/claude/settings.json /opt/defaults/claude/CLAUDE.md
 # ── Runtime directories ────────────────────────────────────────────────────────
 # These are created here for non-volume runs; entrypoint re-creates them
 # (volume mounts shadow image content, so entrypoint handles seeding)
-RUN mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude
+RUN mkdir -p /data/users /var/lib/multiuser-ccui/logs /etc/claude /etc/claude-code \
+    && echo '{}' > /etc/claude-code/managed-settings.json \
+    && chmod 644 /etc/claude-code/managed-settings.json
 
 EXPOSE 80
 

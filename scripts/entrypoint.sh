@@ -16,7 +16,19 @@ fi
 mkdir -p /data/users /var/lib/multiuser-ccui/logs \
          /etc/claude /etc/claude/agents /etc/claude/skills /etc/claude/plugins \
          /etc/claude/npm-global /etc/claude/npm-cache \
-         /etc/claude-code-ui/plugins
+         /etc/claude-code-ui/plugins \
+         /etc/claude-code
+
+# Seed the MDM (enterprise managed settings) file if absent.
+# The claude-agent-sdk calls detectFileEncoding() on this path at every session
+# start.  If the file does not exist the SDK logs
+#   "detectFileEncoding failed for expected reason: ENOENT"
+# on every startup.  An empty JSON object is the correct "no managed settings"
+# state; the SDK merges it with defaults and treats it as "no restrictions".
+if [ ! -f /etc/claude-code/managed-settings.json ]; then
+  echo '{}' > /etc/claude-code/managed-settings.json
+  chmod 644 /etc/claude-code/managed-settings.json
+fi
 
 # Seed default Claude settings if the volume was mounted empty
 if [ ! -f /etc/claude/settings.json ]; then
