@@ -15,5 +15,12 @@
         "repo": "anthropics/claude-plugins-official"
       }
     }
+  },
+  "mcpServers": {
+    "intellisense": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/opt/lsp-mcp-server/dist/index.js", "--project", "."]
+    }
   }
 }

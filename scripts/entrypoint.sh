@@ -69,6 +69,27 @@ try {
 } catch(e) { console.error('Warning: could not patch settings.json:', e.message); }
 " 2>&1 || true
 
+# Ensure the baked-in LSP-MCP-Server is registered (idempotent, covers upgrades
+# where /etc/claude/settings.json already exists on a mounted volume and would
+# otherwise miss the default mcpServers.intellisense entry).
+node -e "
+const fs = require('fs');
+const f = '/etc/claude/settings.json';
+try {
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  if (!s.mcpServers) s.mcpServers = {};
+  if (!s.mcpServers.intellisense) {
+    s.mcpServers.intellisense = {
+      type: 'stdio',
+      command: 'node',
+      args: ['/opt/lsp-mcp-server/dist/index.js', '--project', '.']
+    };
+    fs.writeFileSync(f, JSON.stringify(s, null, 2) + '\n');
+    console.log('Registered intellisense (LSP-MCP-Server) in settings');
+  }
+} catch(e) { console.error('Warning: could not register intellisense:', e.message); }
+" 2>&1 || true
+
 # Sync /data/.mcp.json from any MCP servers already stored in settings.json
 # (covers the case where the volume is re-mounted after an upgrade)
 node -e "

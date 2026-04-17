@@ -86,6 +86,16 @@ RUN curl -fsSL \
 # ── Claude Code CLI ────────────────────────────────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code
 
+# ── LSP-MCP-Server (IntelliSense via language servers) ────────────────────────
+# Baked into the image so every user gets IntelliSense MCP automatically.
+# Registered in settings.json as the "intellisense" MCP server.
+RUN git clone https://github.com/goodwinka/LSP-MCP-Server.git /opt/lsp-mcp-server \
+    && cd /opt/lsp-mcp-server \
+    && npm install \
+    && npm run build \
+    && npm prune --production \
+    && chmod -R a+rX /opt/lsp-mcp-server
+
 # ── ClaudeCodeUI ───────────────────────────────────────────────────────────────
 WORKDIR /opt/claudecodeui
 COPY patches/ /opt/patches/
