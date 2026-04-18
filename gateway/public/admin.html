@@ -42,6 +42,7 @@
   .badge-user    { background: #23863622; color: #56d364; border: 1px solid #23863655; }
   .badge-blocked { background: #f8514922; color: #f85149; border: 1px solid #f8514955; }
   .badge-active  { background: #23863622; color: #56d364; border: 1px solid #23863655; }
+  .badge-offline { background: #30363d; color: #8b949e; border: 1px solid #484f5855; }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .btn {
     padding: 5px 12px; border-radius: 6px; border: 1px solid;
@@ -575,7 +576,11 @@ async function loadSessions() {
 
 async function loadUsers() {
   try {
-    const data = await api('GET', '/__gateway/api/admin/users');
+    const [data, sessions] = await Promise.all([
+      api('GET', '/__gateway/api/admin/users'),
+      api('GET', '/__gateway/api/admin/sessions'),
+    ]);
+    const onlineSet = new Set(sessions.map(s => s.username));
     document.getElementById('stat-total').textContent = data.length;
     document.getElementById('stat-blocked').textContent = data.filter(u => u.blocked).length;
     document.getElementById('stat-admins').textContent = data.filter(u => u.role === 'admin').length;
@@ -589,7 +594,9 @@ async function loadUsers() {
         <td style="color:#8b949e;font-size:0.8rem">${u.created_at.slice(0,16)}</td>
         <td>${u.blocked
           ? '<span class="badge badge-blocked">Заблокирован</span>'
-          : '<span class="badge badge-active">Активен</span>'}</td>
+          : onlineSet.has(u.username)
+            ? '<span class="badge badge-active">Онлайн</span>'
+            : '<span class="badge badge-offline">Не в сети</span>'}</td>
         <td><div class="actions">
           ${u.blocked
             ? `<button class="btn btn-green" onclick="unblock(${u.id})">Разблок.</button>`
