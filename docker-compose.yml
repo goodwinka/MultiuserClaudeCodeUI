@@ -3,6 +3,11 @@ version: '3.8'
 services:
   app:
     build: .
+    # Docker's built-in init (tini) becomes PID 1 and reaps orphaned children.
+    # Without this the gateway becomes PID 1 itself but doesn't waitpid() on
+    # grandchildren re-parented to it (e.g. when bash exits in a Shell-tab PTY
+    # and leaves a claude process behind), which accumulates zombies.
+    init: true
     ports:
       - "${PORT:-80}:80"
     volumes:

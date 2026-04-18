@@ -6,6 +6,8 @@ const fs = require('fs');
 
 const DB_DIR = '/var/lib/multiuser-ccui';
 const DB_PATH = path.join(DB_DIR, 'users.db');
+const BACKUP_DIR = path.join(DB_DIR, 'backups');
+const BACKUP_RETENTION = 7;
 
 let db;
 
@@ -92,4 +94,46 @@ function updateUserSettings(id, settings) {
   db.prepare('UPDATE users SET settings = ? WHERE id = ?').run(JSON.stringify(settings), id);
 }
 
-module.exports = { init, nextUid, createUser, findByUsername, getUserById, getAllUsers, blockUser, deleteUser, updateRole, updatePassword, getUserSettings, updateUserSettings };
+// ── Backups ──────────────────────────────────────────────────────────────────
+// Uses better-sqlite3's online .backup() (SQLite backup API), so it's safe to
+// run while the gateway is serving traffic — it takes a consistent snapshot
+// without blocking writers for the full duration.
+
+function pad(n) { return n < 10 ? '0' + n : String(n); }
+function tsStamp(d) {
+  return d.getUTCFullYear()
+    + pad(d.getUTCMonth() + 1)
+    + pad(d.getUTCDate())
+    + '-'
+    + pad(d.getUTCHours())
+    + pad(d.getUTCMinutes())
+    + pad(d.getUTCSeconds());
+}
+
+async function backupNow() {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const dest = path.join(BACKUP_DIR, `users-${tsStamp(new Date())}.db`);
+  await db.backup(dest);
+
+  const files = fs.readdirSync(BACKUP_DIR)
+    .filter(f => /^users-\d{8}-\d{6}\.db$/.test(f))
+    .sort();
+  const stale = files.slice(0, Math.max(0, files.length - BACKUP_RETENTION));
+  for (const f of stale) {
+    try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch {}
+  }
+  return dest;
+}
+
+function startBackupScheduler(intervalMs = 24 * 60 * 60 * 1000) {
+  const run = () => {
+    backupNow()
+      .then(dest => console.log(`[db] backup written: ${dest}`))
+      .catch(err => console.warn('[db] backup failed:', err.message));
+  };
+  // Run once shortly after startup, then on fixed interval.
+  setTimeout(run, 30_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+module.exports = { init, nextUid, createUser, findByUsername, getUserById, getAllUsers, blockUser, deleteUser, updateRole, updatePassword, getUserSettings, updateUserSettings, backupNow, startBackupScheduler };
