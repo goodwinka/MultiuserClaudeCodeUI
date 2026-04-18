@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const httpProxy = require('http-proxy');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 
 const { execFile } = require('child_process');
 
@@ -586,6 +587,14 @@ app.delete(GW + '/api/admin/marketplaces/:name', requireAdmin, async (req, res) 
 // MCP server definitions (only for approval/deny lists).  We maintain a shared
 // /data/.mcp.json that sits above all user workspaces so every user's project
 // walk reaches it.
+//
+// SECURITY NOTE: this file is necessarily readable by every per-user process
+// (uid 10000+) because each user's `claude` subprocess must load MCP definitions
+// and start the configured servers with their env vars.  Anything stored here
+// (tokens, API keys inside MCP `env` / `headers`) is effectively SHARED between
+// all users on this deployment.  Do NOT put user-specific secrets in admin
+// panel MCP configs — only credentials that every user on this instance is
+// authorised to use.
 
 const GLOBAL_MCP_PATH = '/data/.mcp.json';
 
@@ -601,16 +610,16 @@ function syncMcpJson() {
         active[name] = serverCfg;
       }
     }
-    if (Object.keys(active).length > 0) {
-      fs.writeFileSync(
-        GLOBAL_MCP_PATH,
-        JSON.stringify({ mcpServers: active }, null, 2) + '\n',
-        { mode: 0o644 }
-      );
-    } else {
-      // No active servers — remove the file so Claude Code sees no servers
-      if (fs.existsSync(GLOBAL_MCP_PATH)) fs.unlinkSync(GLOBAL_MCP_PATH);
-    }
+    // Always write the file (with an empty mcpServers object when there are
+    // no active servers) instead of unlinking.  Unlinking would race with
+    // per-user `claude` processes that walk up to /data/.mcp.json: a brief
+    // "no file" window between unlink and the next save would cause them to
+    // lose all MCP configuration until the next session restart.
+    fs.writeFileSync(
+      GLOBAL_MCP_PATH,
+      JSON.stringify({ mcpServers: active }, null, 2) + '\n',
+      { mode: 0o644 }
+    );
   } catch (e) {
     console.warn('[gateway] Failed to sync .mcp.json:', e.message);
   }
@@ -731,63 +740,16 @@ app.delete(GW + '/api/admin/notifications/:id', requireAdmin, (req, res) => {
 
 // ── User git settings ─────────────────────────────────────────────────────────
 
+const { writeUserGitconfig } = require('./userGitConfig');
+
 /**
  * Regenerate /data/users/{username}/.gitconfig from stored settings.
  * Called on settings save and during new-user setup.
  */
 function applyUserGitConfig(username, settings) {
-  const home = `/data/users/${username}`;
-  const gitconfigPath = path.join(home, '.gitconfig');
-
-  const git = settings.git || {};
-  const name = (git.name || '').trim() || username;
-  const email = (git.email || '').trim() || `${username}@localhost`;
-
-  let content = `[user]\n\tname = ${name}\n\temail = ${email}\n`;
-
-  // Per-GitLab token entries via url.insteadOf
-  const gitlabs = Array.isArray(settings.gitlabs) ? settings.gitlabs : [];
-  for (const entry of gitlabs) {
-    const rawUrl = (entry.url || '').trim().replace(/\/$/, '');
-    const token = (entry.token || '').trim();
-    if (!rawUrl || !token) continue;
-    const authedUrl = rawUrl.replace(/^(https?:\/\/)/, `$1oauth2:${token}@`);
-    content += `[url "${authedUrl}/"]\n\tinsteadOf = ${rawUrl}/\n`;
-  }
-
-  // Generic URL redirects via url.insteadOf
-  // Normalise HTTP/HTTPS base URLs to always have a trailing slash so that
-  // git's prefix-replacement logic produces a valid URL.  Without the slash,
-  // "insteadOf = https://host" applied to "https://host/path" would yield
-  // "<base>/path" (correct) but "insteadOf = https://host/" applied to the
-  // same URL with a base lacking the slash would yield "<base>path" (broken).
-  // Keeping both sides consistent avoids double-slashes or missing slashes.
-  const redirects = Array.isArray(settings.urlRedirects) ? settings.urlRedirects : [];
-  for (const r of redirects) {
-    let from = (r.from || '').trim();
-    let to   = (r.to   || '').trim();
-    if (!from || !to) continue;
-    if (/^https?:\/\//i.test(from) && !from.endsWith('/')) from += '/';
-    if (/^https?:\/\//i.test(to)   && !to.endsWith('/'))   to   += '/';
-    content += `[url "${to}"]\n\tinsteadOf = ${from}\n`;
-  }
-
-  // System-level git proxy and SSL settings from environment
-  const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
-  const sslNoVerify = process.env.GIT_SSL_NO_VERIFY === 'true' || process.env.GIT_SSL_NO_VERIFY === '1';
-  if (proxyUrl || sslNoVerify) {
-    content += `[http]\n`;
-    if (proxyUrl) content += `\tproxy = ${proxyUrl}\n`;
-    if (sslNoVerify) content += `\tsslVerify = false\n`;
-  }
-
   try {
-    fs.mkdirSync(home, { recursive: true });
-    fs.writeFileSync(gitconfigPath, content, { mode: 0o644 });
     const dbUser = db.findByUsername(username);
-    if (dbUser) {
-      try { fs.chownSync(gitconfigPath, dbUser.uid, dbUser.uid); } catch {}
-    }
+    writeUserGitconfig(username, settings, dbUser ? dbUser.uid : undefined);
   } catch (e) {
     console.warn(`[gw] gitconfig write warning for ${username}:`, e.message);
   }
@@ -863,11 +825,23 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
     return;
   }
 
-  // Buffer text response for logout-bar injection and esm.sh URL rewriting
+  // Buffer text response for logout-bar injection and esm.sh URL rewriting.
+  // We asked upstream for `accept-encoding: identity`, but if it sends a
+  // compressed response anyway (some middleware ignores that header), decode
+  // it before rewriting — otherwise we'd corrupt the gzip stream.
+  const encoding = String(proxyRes.headers['content-encoding'] || '').toLowerCase();
   const chunks = [];
   proxyRes.on('data', (chunk) => chunks.push(chunk));
   proxyRes.on('end', () => {
-    let text = Buffer.concat(chunks).toString('utf8');
+    let body = Buffer.concat(chunks);
+    try {
+      if (encoding === 'gzip')         body = zlib.gunzipSync(body);
+      else if (encoding === 'deflate') body = zlib.inflateSync(body);
+      else if (encoding === 'br')      body = zlib.brotliDecompressSync(body);
+    } catch (e) {
+      console.warn('[gw] failed to decode upstream response:', e.message);
+    }
+    let text = body.toString('utf8');
 
     if (isHtml) {
       if (text.includes('</body>')) {
@@ -884,8 +858,11 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
     }
 
     const headers = Object.assign({}, proxyRes.headers);
+    // We're sending plain UTF-8; strip transport-level framing/compression
+    // headers so the browser doesn't try to decompress our identity payload.
     delete headers['content-length'];
     delete headers['transfer-encoding'];
+    delete headers['content-encoding'];
     headers['content-length'] = Buffer.byteLength(text);
 
     res.writeHead(proxyRes.statusCode, headers);
@@ -958,10 +935,21 @@ server.on('upgrade', async (req, socket, head) => {
     const activityInterval = setInterval(() => {
       pm.touchSession(user.username);
     }, 60_000);
-    socket.once('close', () => clearInterval(activityInterval));
-    proxy.ws(req, socket, head, { target: `ws://127.0.0.1:${port}` });
+    const stopTouch = () => clearInterval(activityInterval);
+    socket.once('close', stopTouch);
+    // The main `proxy.on('error')` handler targets HTTP responses; in the WS
+    // path `res` is undefined, so bridge upstream errors to the raw socket
+    // here and make sure the activity timer is cleared.
+    socket.once('error', stopTouch);
+    proxy.ws(req, socket, head, { target: `ws://127.0.0.1:${port}` }, (err) => {
+      stopTouch();
+      if (err && !socket.destroyed) {
+        try { socket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n'); } catch {}
+        socket.destroy();
+      }
+    });
   } catch (err) {
-    socket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
+    try { socket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n'); } catch {}
     socket.destroy();
   }
 });
@@ -969,6 +957,7 @@ server.on('upgrade', async (req, socket, head) => {
 // ── Initialise ────────────────────────────────────────────────────────────────
 
 db.init();
+db.startBackupScheduler();
 
 // Bootstrap admin account
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin123';

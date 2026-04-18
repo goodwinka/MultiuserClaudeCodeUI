@@ -264,7 +264,6 @@
     saveBtn.addEventListener('mouseleave', function () { saveBtn.style.background = '#238636'; });
 
     saveBtn.addEventListener('click', function () {
-      var glRows = glList.querySelectorAll('div[data-gl]') || glList.children;
       var gitlabs = [];
       for (var i = 0; i < glList.children.length; i++) {
         var r = glList.children[i];

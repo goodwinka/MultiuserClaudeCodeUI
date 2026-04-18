@@ -104,22 +104,36 @@ function ensureSystemUser(username, uid) {
         const parts = line.split(':');
         return parts[0] === username || (parts[2] !== undefined && parts[2] === String(uid));
       });
-      if (!alreadyPresent) fs.appendFileSync(file, entry);
+      if (!alreadyPresent) {
+        // O_APPEND (flag 'a') guarantees atomic append on POSIX, so concurrent
+        // registrations don't interleave partial lines in /etc/passwd or /etc/group.
+        const fd = fs.openSync(file, 'a');
+        try { fs.writeSync(fd, entry); } finally { fs.closeSync(fd); }
+      }
     } catch (e) {
       console.warn(`[pm] ${file} update warning for ${username}:`, e.message);
     }
   }
 }
 
+// Remove a user's entry from passwd-style files by parsing each line's first
+// field.  Using startsWith() is unsafe: a valid username cannot contain ':',
+// but commented or malformed lines could still confuse a prefix match.
 function removeSystemUser(username) {
   if (!username) return;
   for (const file of ['/etc/passwd', '/etc/group', '/etc/shadow']) {
     try {
       const content = fs.readFileSync(file, 'utf8');
-      const filtered = content.split('\n')
-        .filter(line => !line.startsWith(username + ':'))
-        .join('\n');
-      fs.writeFileSync(file, filtered);
+      const endsWithNewline = content.endsWith('\n');
+      const lines = content.split('\n');
+      const filtered = lines.filter(line => {
+        if (!line) return true; // preserve trailing empty element from split
+        const name = line.split(':', 1)[0];
+        return name !== username;
+      });
+      let out = filtered.join('\n');
+      if (endsWithNewline && !out.endsWith('\n')) out += '\n';
+      fs.writeFileSync(file, out);
     } catch { /* file may not exist or be unwritable – safe to skip */ }
   }
 }
@@ -214,39 +228,9 @@ function setupUserDir(username, uid) {
       if (dbUser) storedSettings = db.getUserSettings(dbUser.id);
     } catch {}
 
-    const gitName = (storedSettings.git && storedSettings.git.name) || username;
-    const gitEmail = (storedSettings.git && storedSettings.git.email) || `${username}@localhost`;
-    let gitconfig = `[user]\n\tname = ${gitName}\n\temail = ${gitEmail}\n`;
-
-    const gitlabs = Array.isArray(storedSettings.gitlabs) ? storedSettings.gitlabs : [];
-    for (const entry of gitlabs) {
-      const rawUrl = (entry.url || '').trim().replace(/\/$/, '');
-      const token = (entry.token || '').trim();
-      if (!rawUrl || !token) continue;
-      const authedUrl = rawUrl.replace(/^(https?:\/\/)/, `$1oauth2:${token}@`);
-      gitconfig += `[url "${authedUrl}/"]\n\tinsteadOf = ${rawUrl}/\n`;
-    }
-
-    const redirects = Array.isArray(storedSettings.urlRedirects) ? storedSettings.urlRedirects : [];
-    for (const r of redirects) {
-      let from = (r.from || '').trim();
-      let to   = (r.to   || '').trim();
-      if (!from || !to) continue;
-      if (/^https?:\/\//i.test(from) && !from.endsWith('/')) from += '/';
-      if (/^https?:\/\//i.test(to)   && !to.endsWith('/'))   to   += '/';
-      gitconfig += `[url "${to}"]\n\tinsteadOf = ${from}\n`;
-    }
-
-    const proxyUrl = process.env.GIT_PROXY_URL || process.env.HTTP_PROXY || '';
-    const sslNoVerify = process.env.GIT_SSL_NO_VERIFY === 'true' || process.env.GIT_SSL_NO_VERIFY === '1';
-    if (proxyUrl || sslNoVerify) {
-      gitconfig += `[http]\n`;
-      if (proxyUrl) gitconfig += `\tproxy = ${proxyUrl}\n`;
-      if (sslNoVerify) gitconfig += `\tsslVerify = false\n`;
-    }
-
     try {
-      fs.writeFileSync(gitconfigPath, gitconfig, { mode: 0o644 });
+      const { writeUserGitconfig } = require('./userGitConfig');
+      writeUserGitconfig(username, storedSettings);
     } catch (e) {
       console.warn(`[pm] gitconfig write warning for ${username}:`, e.message);
     }
@@ -358,21 +342,29 @@ async function startProcess(username, uid) {
   proc.stderr.pipe(logStream);
 
   const session = { port, proc, lastActivity: Date.now() };
+  // Register the session right away so that: (a) touchSession() during
+  // initializePlatformUser counts as activity and (b) if the child process
+  // exits early, the exit handler can delete it.  Without this, a process
+  // that died between waitForPort and sessions.set would leak its entry.
+  sessions.set(username, session);
 
   proc.on('exit', (code) => {
     logStream.end();
     releasePort(port);
-    sessions.delete(username);
+    // Only remove *our* session entry — if killUser already replaced it with a
+    // newer start, leave the new one alone.
+    if (sessions.get(username) === session) sessions.delete(username);
     console.log(`[pm] ${username} exited (code ${code})`);
   });
 
   try {
     await waitForPort(port, 30000);
     await initializePlatformUser(port, username);
-    sessions.set(username, session);
+    session.lastActivity = Date.now();
     console.log(`[pm] ${username} started on port ${port}`);
   } catch (err) {
-    proc.kill();
+    // exit handler will release the port and delete the session entry
+    try { proc.kill(); } catch {}
     throw err;
   }
 
@@ -438,13 +430,22 @@ function getActiveSessions() {
 
 // ── Idle session cleanup ──────────────────────────────────────────────────────
 
+// Give late-arriving activity a grace window: a request that lands right
+// between the sweep and killUser would otherwise be racing the SIGTERM.
+const IDLE_GRACE_MS = 5_000;
+
 setInterval(() => {
   const now = Date.now();
   for (const [username, s] of sessions) {
-    if (now - s.lastActivity > TIMEOUT_MS) {
-      console.log(`[pm] idle timeout for ${username}`);
-      killUser(username);
-    }
+    if (now - s.lastActivity <= TIMEOUT_MS) continue;
+    // Re-read the entry to ensure it wasn't touched while we were iterating
+    // (Map iteration is synchronous, but subsequent loop bodies are not, and
+    // getOrStart/touchSession may run before we reach the kill call below).
+    const current = sessions.get(username);
+    if (!current || current !== s) continue;
+    if (Date.now() - current.lastActivity <= TIMEOUT_MS + IDLE_GRACE_MS) continue;
+    console.log(`[pm] idle timeout for ${username}`);
+    killUser(username);
   }
 }, 60_000);
 
