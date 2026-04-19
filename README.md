@@ -60,27 +60,27 @@ docker build \
 ### 2. Сохранение образа в файл (tar)
 
 ```bash
-docker save multiuser-ccui:latest | gzip > multiuser-ccui.tar.gz
+docker save multiuserclaudecodeui-app:latest | gzip > multiuserclaudecodeui-app.tar.gz
 ```
 
 ### 3. Перенос на другую машину
 
 ```bash
-scp multiuser-ccui.tar.gz user@target-host:/opt/deploy/
+scp multiuserclaudecodeui-app.tar.gz user@target-host:/opt/deploy/
 ```
 
 ### 4. Загрузка образа на целевой машине
 
 ```bash
-docker load < multiuser-ccui.tar.gz
+docker load < multiuserclaudecodeui-app.tar.gz
 # или
-gunzip -c multiuser-ccui.tar.gz | docker load
+gunzip -c multiuserclaudecodeui-app.tar.gz | docker load
 ```
 
 Убедиться, что образ загружен:
 
 ```bash
-docker images | grep multiuser-ccui
+docker images | grep multiuserclaudecodeui-app
 ```
 
 ### 5. Развёртывание из локального образа
@@ -97,7 +97,7 @@ docker compose up -d
 ```yaml
 services:
   app:
-    image: multiuser-ccui:latest   # ← вместо "build: ."
+    image: multiuserclaudecodeui-app:latest   # ← вместо "build: ."
     ports:
       - "${PORT:-80}:80"
     # ... остальное без изменений
