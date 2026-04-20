@@ -140,6 +140,44 @@ function removeSystemUser(username) {
 
 // ── Setup user home directory ─────────────────────────────────────────────────
 
+// Recursively change ownership of a directory tree to (uid, gid), using lchown
+// so symlinks are re-owned without following them (the target of a symlink
+// into /etc/claude must stay root-owned).  Silently skips entries that cannot
+// be stat'd or chown'd to keep session startup robust against partial damage.
+function chownRecursive(dirPath, uid, gid) {
+  let entries;
+  try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); }
+  catch { return; }
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    try { fs.lchownSync(full, uid, gid); } catch {}
+    // Recurse into real directories only — not symlinks to directories, to
+    // avoid escaping the user's home via a symlink pointing at /etc/claude.
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      chownRecursive(full, uid, gid);
+    }
+  }
+}
+
+// Fix ownership of the user's home if the top-level directory is not owned by
+// the expected uid.  This handles the "folder moved to another PC" case where
+// numeric uids in /data/users/* no longer match the uids stored in the SQLite
+// DB (or ownership was lost entirely during tar/rsync/cp).  Without this:
+//   - the user's process (uid 10000+) can't traverse .claude/ → `claude` CLI
+//     fails to load settings.json even though the symlink is valid
+//   - the user can't create files inside their own projects/ subdirectories
+//   - bash history / plugin state can't be written from the Shell tab PTY
+function fixOwnershipIfStale(home, uid) {
+  let st;
+  try { st = fs.statSync(home); } catch { return; }
+  if (st.uid === uid && st.gid === uid) return; // already correct
+  console.log(`[pm] fixing ownership of ${home} (was ${st.uid}:${st.gid}, expected ${uid}:${uid})`);
+  try { fs.lchownSync(home, uid, uid); } catch (e) {
+    console.warn(`[pm] chown ${home}: ${e.message}`);
+  }
+  chownRecursive(home, uid, uid);
+}
+
 function setupUserDir(username, uid) {
   // Ensure the OS user database knows about this uid so that bash login shells
   // (spawned by the ClaudeCodeUI terminal plugin) can resolve HOME correctly.
@@ -153,69 +191,38 @@ function setupUserDir(username, uid) {
   fs.mkdirSync(claudeDir, { recursive: true });
   fs.mkdirSync(projectsDir, { recursive: true });
 
-  // Symlink global claude settings (read-only for user processes)
-  const settingsLink = path.join(claudeDir, 'settings.json');
-  const settingsIsSymlink = (() => { try { return fs.lstatSync(settingsLink).isSymbolicLink(); } catch { return false; } })();
-  if (!settingsIsSymlink) {
+  // Ensure `linkPath` is a symlink pointing at `target`.  Rebuilds the link
+  // whenever the target is wrong or the path is a regular file/dir (this is
+  // what happens when /data is copied with a tool that dereferences symlinks,
+  // e.g. rsync without -l, or cp without -a).
+  const ensureSymlink = (linkPath, target, rmRecursive = false) => {
     try {
-      if (fs.existsSync(settingsLink)) fs.rmSync(settingsLink, { force: true });
-      fs.symlinkSync('/etc/claude/settings.json', settingsLink);
-    } catch {}
-  }
+      const st = fs.lstatSync(linkPath);
+      if (st.isSymbolicLink()) {
+        try {
+          if (fs.readlinkSync(linkPath) === target) return; // already correct
+        } catch {}
+        fs.rmSync(linkPath, { force: true });
+      } else {
+        fs.rmSync(linkPath, { force: true, recursive: rmRecursive });
+      }
+    } catch { /* ENOENT: nothing to clean up */ }
+    try { fs.symlinkSync(target, linkPath); } catch {}
+  };
 
-  // Symlink global CLAUDE.md (read-only for user processes)
-  const claudeMdLink = path.join(claudeDir, 'CLAUDE.md');
-  const claudeMdIsSymlink = (() => { try { return fs.lstatSync(claudeMdLink).isSymbolicLink(); } catch { return false; } })();
-  if (!claudeMdIsSymlink) {
-    try {
-      if (fs.existsSync(claudeMdLink)) fs.rmSync(claudeMdLink, { force: true });
-      fs.symlinkSync('/etc/claude/CLAUDE.md', claudeMdLink);
-    } catch {}
-  }
-
-  // Symlink global agents directory (read-only for user processes)
-  const agentsLink = path.join(claudeDir, 'agents');
-  const agentsIsSymlink = (() => { try { return fs.lstatSync(agentsLink).isSymbolicLink(); } catch { return false; } })();
-  if (!agentsIsSymlink) {
-    try {
-      if (fs.existsSync(agentsLink)) fs.rmSync(agentsLink, { recursive: true, force: true });
-      fs.symlinkSync('/etc/claude/agents', agentsLink);
-    } catch {}
-  }
-
-  // Symlink global skills directory (read-only for user processes)
-  const skillsLink = path.join(claudeDir, 'skills');
-  const skillsIsSymlink = (() => { try { return fs.lstatSync(skillsLink).isSymbolicLink(); } catch { return false; } })();
-  if (!skillsIsSymlink) {
-    try {
-      if (fs.existsSync(skillsLink)) fs.rmSync(skillsLink, { recursive: true, force: true });
-      fs.symlinkSync('/etc/claude/skills', skillsLink);
-    } catch {}
-  }
-
-  // Symlink global plugins directory (read-only for user processes).
-  // Use lstat to distinguish a real symlink from a plain directory that
-  // Claude Code may have created during an earlier session.
-  const pluginsLink = path.join(claudeDir, 'plugins');
-  const pluginsIsSymlink = (() => { try { return fs.lstatSync(pluginsLink).isSymbolicLink(); } catch { return false; } })();
-  if (!pluginsIsSymlink) {
-    try {
-      if (fs.existsSync(pluginsLink)) fs.rmSync(pluginsLink, { recursive: true, force: true });
-      fs.symlinkSync('/etc/claude/plugins', pluginsLink);
-    } catch {}
-  }
+  // Symlink global claude assets (read-only for user processes).  The target
+  // of each symlink stays root-owned (mode 755/644) so user processes can
+  // read it but can't accidentally overwrite the shared state.
+  ensureSymlink(path.join(claudeDir, 'settings.json'), '/etc/claude/settings.json');
+  ensureSymlink(path.join(claudeDir, 'CLAUDE.md'),     '/etc/claude/CLAUDE.md');
+  ensureSymlink(path.join(claudeDir, 'agents'),        '/etc/claude/agents',  true);
+  ensureSymlink(path.join(claudeDir, 'skills'),        '/etc/claude/skills',  true);
+  ensureSymlink(path.join(claudeDir, 'plugins'),       '/etc/claude/plugins', true);
 
   // Symlink global .claude-code-ui/plugins directory (shared across all users).
   const codeUiDir = path.join(home, '.claude-code-ui');
   fs.mkdirSync(codeUiDir, { recursive: true });
-  const codeUiPluginsLink = path.join(codeUiDir, 'plugins');
-  const codeUiPluginsIsSymlink = (() => { try { return fs.lstatSync(codeUiPluginsLink).isSymbolicLink(); } catch { return false; } })();
-  if (!codeUiPluginsIsSymlink) {
-    try {
-      if (fs.existsSync(codeUiPluginsLink)) fs.rmSync(codeUiPluginsLink, { recursive: true, force: true });
-      fs.symlinkSync('/etc/claude-code-ui/plugins', codeUiPluginsLink);
-    } catch {}
-  }
+  ensureSymlink(path.join(codeUiDir, 'plugins'), '/etc/claude-code-ui/plugins', true);
 
   // Create per-user .gitconfig so git works out of the box.
   // If user already has stored settings, apply them; otherwise write defaults.
@@ -247,6 +254,11 @@ function setupUserDir(username, uid) {
   } catch (e) {
     console.warn(`[pm] chown warning for ${username}:`, e.message);
   }
+
+  // Recover from ownership damage caused by moving /data to a different host
+  // (tar/rsync/cp without --numeric-ids, or numeric uid collisions between
+  // hosts).  Cheap no-op when the home is already owned by the expected uid.
+  fixOwnershipIfStale(home, uid);
 }
 
 // ── Start a claudecodeui process for a user ───────────────────────────────────
