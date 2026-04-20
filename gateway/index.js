@@ -819,8 +819,12 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
                  contentType.includes('text/javascript');
 
   if (!isHtml && !isJs) {
-    // Non-text: pipe through unchanged
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    // Non-text: pipe through unchanged.  Tell any intermediate nginx not to
+    // buffer this response so chat SSE / streaming JSON reaches the client
+    // token-by-token instead of landing in one chunk at the end.
+    const headers = Object.assign({}, proxyRes.headers);
+    if (!headers['x-accel-buffering']) headers['x-accel-buffering'] = 'no';
+    res.writeHead(proxyRes.statusCode, headers);
     proxyRes.pipe(res);
     return;
   }
