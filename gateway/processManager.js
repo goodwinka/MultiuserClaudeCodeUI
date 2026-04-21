@@ -140,42 +140,51 @@ function removeSystemUser(username) {
 
 // ── Setup user home directory ─────────────────────────────────────────────────
 
-// Recursively change ownership of a directory tree to (uid, gid), using lchown
-// so symlinks are re-owned without following them (the target of a symlink
-// into /etc/claude must stay root-owned).  Silently skips entries that cannot
-// be stat'd or chown'd to keep session startup robust against partial damage.
-function chownRecursive(dirPath, uid, gid) {
+// Recursively change ownership of a directory tree to (uid, gid) *lazily*:
+// only issue lchown when an entry's current uid/gid differ from the target.
+// Uses lchown so symlinks are re-owned without following them (the target of
+// a symlink into /etc/claude must stay root-owned).  Silently skips entries
+// that cannot be stat'd or chown'd to keep session startup robust against
+// partial damage.
+//
+// The lazy check (stat first, chown only if wrong) keeps the cost near zero
+// when the home is already correctly owned — stat() is ~1µs per entry, so a
+// project with 10k files still takes <50ms.  When something is actually
+// wrong, only the stale subset is touched.
+function chownRecursiveLazy(dirPath, uid, gid) {
   let entries;
   try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); }
   catch { return; }
   for (const entry of entries) {
     const full = path.join(dirPath, entry.name);
-    try { fs.lchownSync(full, uid, gid); } catch {}
+    try {
+      const st = fs.lstatSync(full);
+      if (st.uid !== uid || st.gid !== gid) {
+        fs.lchownSync(full, uid, gid);
+      }
+    } catch {}
     // Recurse into real directories only — not symlinks to directories, to
     // avoid escaping the user's home via a symlink pointing at /etc/claude.
     if (entry.isDirectory() && !entry.isSymbolicLink()) {
-      chownRecursive(full, uid, gid);
+      chownRecursiveLazy(full, uid, gid);
     }
   }
 }
 
-// Fix ownership of the user's home if the top-level directory is not owned by
-// the expected uid.  This handles the "folder moved to another PC" case where
-// numeric uids in /data/users/* no longer match the uids stored in the SQLite
-// DB (or ownership was lost entirely during tar/rsync/cp).  Without this:
-//   - the user's process (uid 10000+) can't traverse .claude/ → `claude` CLI
-//     fails to load settings.json even though the symlink is valid
-//   - the user can't create files inside their own projects/ subdirectories
-//   - bash history / plugin state can't be written from the Shell tab PTY
-function fixOwnershipIfStale(home, uid) {
-  let st;
-  try { st = fs.statSync(home); } catch { return; }
-  if (st.uid === uid && st.gid === uid) return; // already correct
-  console.log(`[pm] fixing ownership of ${home} (was ${st.uid}:${st.gid}, expected ${uid}:${uid})`);
-  try { fs.lchownSync(home, uid, uid); } catch (e) {
-    console.warn(`[pm] chown ${home}: ${e.message}`);
-  }
-  chownRecursive(home, uid, uid);
+// Fix ownership of any stale entries inside the user's home.  Runs
+// unconditionally on every session start because the original guarded version
+// (fixOwnershipIfStale) was dead code: setupUserDir always chowns the
+// top-level home right before this runs, so the `st.uid === uid` check always
+// bailed out — leaving subdirectories (created by root during bind-mount
+// setup, by an admin impersonating into the user's workspace, or by
+// tar/rsync/cp without --numeric-ids) with the wrong owner.  The lazy walk
+// keeps the common "already correct" case O(N stat) with zero chown syscalls.
+//
+// Without this the agent (running as the user's uid) would fail to create
+// files inside subdirectories it doesn't own, which surfaced as "the agent
+// can't create files until I chmod -R 777 the workspace".
+function fixUserHomeOwnership(home, uid) {
+  chownRecursiveLazy(home, uid, uid);
 }
 
 function setupUserDir(username, uid) {
@@ -255,10 +264,12 @@ function setupUserDir(username, uid) {
     console.warn(`[pm] chown warning for ${username}:`, e.message);
   }
 
-  // Recover from ownership damage caused by moving /data to a different host
-  // (tar/rsync/cp without --numeric-ids, or numeric uid collisions between
-  // hosts).  Cheap no-op when the home is already owned by the expected uid.
-  fixOwnershipIfStale(home, uid);
+  // Recover from ownership damage caused by (a) moving /data to a different
+  // host (tar/rsync/cp without --numeric-ids, or numeric uid collisions
+  // between hosts), (b) files seeded by root during bind-mount init, or (c)
+  // admin impersonating the user's workspace.  Lazy walk: O(N stat) with zero
+  // chown syscalls when everything is already correct.
+  fixUserHomeOwnership(home, uid);
 }
 
 // ── Start a claudecodeui process for a user ───────────────────────────────────
