@@ -98,7 +98,18 @@ RUN git clone https://github.com/goodwinka/LSP-MCP-Server.git /opt/lsp-mcp-serve
 
 # ── ClaudeCodeUI ───────────────────────────────────────────────────────────────
 WORKDIR /opt/claudecodeui
+COPY patches/ /opt/patches/
 RUN git clone https://github.com/siteboon/claudecodeui.git . \
+    && cp /opt/patches/chat/ProviderSelectionEmptyState.tsx \
+          src/components/chat/view/subcomponents/ProviderSelectionEmptyState.tsx \
+    && cp /opt/patches/server/utils/plugin-process-manager.js \
+          server/utils/plugin-process-manager.js \
+    && cp /opt/patches/src/hooks/useProjectsState.ts \
+          src/hooks/useProjectsState.ts \
+    && cp /opt/patches/src/stores/useSessionStore.ts \
+          src/stores/useSessionStore.ts \
+    && cp /opt/patches/src/components/file-tree/hooks/useFileTreeData.ts \
+          src/components/file-tree/hooks/useFileTreeData.ts \
     && npm install \
     && VITE_IS_PLATFORM=true npm run build
 
