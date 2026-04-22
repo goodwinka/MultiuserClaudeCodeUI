@@ -106,6 +106,8 @@ RUN git clone https://github.com/siteboon/claudecodeui.git . \
           server/utils/plugin-process-manager.js \
     && cp /opt/patches/src/hooks/useProjectsState.ts \
           src/hooks/useProjectsState.ts \
+    && cp /opt/patches/src/stores/useSessionStore.ts \
+          src/stores/useSessionStore.ts \
     && cp /opt/patches/src/components/file-tree/hooks/useFileTreeData.ts \
           src/components/file-tree/hooks/useFileTreeData.ts \
     && npm install \
